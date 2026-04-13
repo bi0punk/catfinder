@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0f172a; color: #e5e7eb; }
+    .card { background: #111827; border: 1px solid #334155; }
+    .badge-online { background: #16a34a; }
+    .badge-offline { background: #dc2626; }
+    .badge-reconnecting { background: #ca8a04; }
+    .stream-box { background: #020617; border-radius: 0.75rem; overflow: hidden; border: 1px solid #334155; }
+    .stream-box img { width: 100%; display: block; min-height: 240px; object-fit: contain; background: #000; }
+    .small-muted { color: #94a3b8; font-size: 0.9rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <div class="container-fluid py-4 px-3 px-md-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+      <div>
+        <h1 class="h3 mb-1">{{ title }}</h1>
+        <div class="small-muted">Vista RTSP en tiempo real + detección YOLO + alertas Telegram</div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-light btn-sm" href="/api/status" target="_blank">API status</a>
+        <a class="btn btn-outline-light btn-sm" href="/health" target="_blank">Health</a>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+      {% for view in views %}
+      <div class="col-12 col-lg-6 col-xxl-4">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
+              <div>
+                <div class="h5 mb-1">{{ view.view_name }}</div>
+                <div class="small-muted">camera={{ view.camera_name }} | split={{ view.split_mode }} | crop={{ view.crop_label }}</div>
+              </div>
+              <span class="badge {% if view.status == 'online' %}badge-online{% elif view.status == 'reconnecting' %}badge-reconnecting{% else %}badge-offline{% endif %}">{{ view.status }}</span>
+            </div>
+
+            <div class="stream-box mb-3">
+              <img src="/stream/{{ view.view_id }}" alt="{{ view.view_name }}">
+            </div>
+
+            <div class="row g-2 small">
+              <div class="col-6"><strong>Resolución:</strong> {{ view.width }}x{{ view.height }}</div>
+              <div class="col-6"><strong>Frames:</strong> {{ view.frame_counter }}</div>
+              <div class="col-6"><strong>Último frame:</strong> {{ view.last_frame_at }}</div>
+              <div class="col-6"><strong>Última detección:</strong> {{ view.last_detection_at }}</div>
+              <div class="col-12"><strong>Objeto:</strong> {{ view.last_detection_label }} {% if view.last_detection_conf %}<span class="mono">({{ view.last_detection_conf }})</span>{% endif %}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h5 mb-0">Eventos recientes</h2>
+          <span class="small-muted">Se actualiza al recargar la página</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-dark table-striped align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Hora local</th>
+                <th>Cámara</th>
+                <th>Vista</th>
+                <th>Etiqueta</th>
+                <th>Confianza</th>
+                <th>Archivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if events %}
+                {% for event in events %}
+                <tr>
+                  <td>{{ event.ts_local }}</td>
+                  <td>{{ event.camera_name }}</td>
+                  <td>{{ event.view_id }}</td>
+                  <td>{{ event.label }}</td>
+                  <td>{{ event.confidence }}</td>
+                  <td class="mono">{{ event.alert_image }}</td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" class="text-center text-secondary">Aún no hay eventos.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
