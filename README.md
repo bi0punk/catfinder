@@ -1,58 +1,111 @@
-# MVP RTSP + YOLO + Telegram para detectar gatos
+# CatFinder RTSP Web MVP
 
-Base mínima pero lista para ejecutar en Linux. Hace esto:
+MVP listo para Linux que hace esto:
 
 1. Se conecta a una o varias cámaras RTSP.
-2. Ejecuta detección con YOLO.
-3. Si detecta un `cat`, guarda captura cruda y captura anotada.
-4. Envía la imagen anotada por Telegram.
-5. Aplica cooldown por cámara para evitar spam.
-6. Reintenta si la cámara RTSP se cae.
+2. Detecta gatos con YOLO.
+3. Envía alertas con imagen por Telegram.
+4. Guarda captura cruda, captura anotada y metadatos JSON.
+5. Expone una interfaz web simple con Bootstrap.
+6. Soporta cámaras de doble lente o streams compuestos con corte **vertical** u **horizontal**.
 
-## Arquitectura rápida
+## Qué mejora esta versión
+
+Además del detector base, esta versión agrega:
+
+- Vista web en tiempo real por navegador.
+- Split de una transmisión en dos vistas separadas.
+- Split vertical: izquierda / derecha.
+- Split horizontal: superior / inferior.
+- Ratio configurable por cámara para mover la línea de corte.
+- Panel con eventos recientes y estado por vista.
+
+## Arquitectura
 
 ```text
-RTSP camera(s)
+RTSP camera física
    -> OpenCV VideoCapture
-      -> YOLO inference
-         -> filtro por clase "cat"
-            -> guardar JPG + JSON
+      -> split opcional (none / vertical / horizontal)
+         -> vista 1
+         -> vista 2
+            -> YOLO inference por vista
+               -> guardar JPG + JSON
                -> sendPhoto a Telegram
+               -> publicar MJPEG en Flask
 ```
 
 ## Requisitos
 
 - Linux
 - Python 3.10+
-- FFmpeg disponible en el sistema es recomendable para RTSP estable
+- FFmpeg/GStreamer en el sistema ayuda bastante para RTSP
 
 ## Instalación
 
 ```bash
-cd cat_rtsp_telegram_mvp
+cd catfinder_web_mvp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-cp .env.example .env
+cp example.env .env
 ```
 
-Ahora edita `.env` con tus datos reales.
+Después edita `.env`.
 
-## Cómo obtener el token y chat_id de Telegram
+## Variables clave
 
-### 1) Crear bot
-- Habla con `@BotFather` en Telegram.
-- Crea el bot y copia el token.
+### 1) Cámara RTSP
 
-### 2) Obtener chat_id
-Una forma simple es escribirle un mensaje a tu bot y luego ejecutar:
-
-```bash
-curl "https://api.telegram.org/bot<TU_TOKEN>/getUpdates"
+```env
+RTSP_URLS=patio=rtsp://usuario:clave@192.168.1.50:554/stream1
 ```
 
-Busca el campo `chat.id` del chat donde quieres recibir alertas.
+También puedes poner varias:
+
+```env
+RTSP_URLS=patio=rtsp://ip1/stream1,entrada=rtsp://ip2/stream1
+```
+
+### 2) Telegram
+
+```env
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+### 3) Split de cámara doble lente
+
+Ejemplo vertical:
+
+```env
+CAMERA_SPLITS=patio=vertical
+CAMERA_SPLIT_RATIOS=patio=0.5
+```
+
+Eso crea dos vistas web y dos canales lógicos de detección:
+
+- `patio / izquierda`
+- `patio / derecha`
+
+Ejemplo horizontal:
+
+```env
+CAMERA_SPLITS=patio=horizontal
+CAMERA_SPLIT_RATIOS=patio=0.5
+```
+
+Eso crea:
+
+- `patio / superior`
+- `patio / inferior`
+
+### 4) Web
+
+```env
+WEB_HOST=0.0.0.0
+WEB_PORT=8080
+```
 
 ## Ejecución
 
@@ -61,71 +114,104 @@ source .venv/bin/activate
 python src/main.py
 ```
 
-## Variables importantes
+Luego abre en el navegador:
 
-```env
-RTSP_URLS=patio=rtsp://usuario:clave@192.168.1.50:554/stream1,entrada=rtsp://usuario:clave@192.168.1.51:554/stream1
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-MODEL_PATH=yolo11n.pt
-TARGET_CLASSES=cat
-CONFIDENCE_THRESHOLD=0.55
-COOLDOWN_SECONDS=60
-PROCESS_EVERY_N_FRAMES=5
+```text
+http://IP_DE_TU_EQUIPO:8080
 ```
 
-## Salida del proyecto
+Si lo ejecutas en la misma máquina:
 
-Las capturas quedan en:
+```text
+http://127.0.0.1:8080
+```
+
+## Archivos generados
 
 ```text
 captures/
-  cam_1/
-    20260412_120010_raw.jpg
-    20260412_120010_alert.jpg
-    20260412_120010.json
+  patio/
+    20260413_120010_left_raw.jpg
+    20260413_120010_left_alert.jpg
+    20260413_120010_left.json
 ```
 
-El JSON contiene:
-- cámara
-- etiqueta detectada
-- confianza
-- timestamp UTC
-- bbox
-- lista de detecciones de ese evento
+El JSON guarda:
 
-## Ajustes recomendados
+- cámara física
+- vista lógica
+- tipo de split
+- bbox
+- confianza
+- timestamp UTC/local
+- ruta de archivos
+
+## Cómo usar el split correctamente
+
+### Caso 1: cámara normal
+Usa:
+
+```env
+CAMERA_SPLITS=patio=none
+```
+
+### Caso 2: stream con dos lentes lado a lado
+Usa:
+
+```env
+CAMERA_SPLITS=patio=vertical
+CAMERA_SPLIT_RATIOS=patio=0.5
+```
+
+### Caso 3: stream con una imagen arriba y otra abajo
+Usa:
+
+```env
+CAMERA_SPLITS=patio=horizontal
+CAMERA_SPLIT_RATIOS=patio=0.5
+```
+
+### Caso 4: la línea de corte no está al centro
+Ajusta el ratio. Ejemplo:
+
+```env
+CAMERA_SPLIT_RATIOS=patio=0.47
+```
+
+Con eso cortas al 47% del ancho o alto, según el modo.
+
+## Rendimiento real
 
 ### Opción simple
 - `MODEL_PATH=yolo11n.pt`
 - `PROCESS_EVERY_N_FRAMES=5`
-- `CONFIDENCE_THRESHOLD=0.55`
-- CPU o GPU ligera
+- 1 a 3 cámaras en CPU razonable
 
 ### Opción más robusta
-- `MODEL_PATH=yolo11s.pt` o un modelo custom entrenado con tus cámaras
-- recorte por ROI antes de inferencia
-- tracking para evitar alertas duplicadas
-- cola asíncrona para Telegram
+- GPU NVIDIA con CUDA
+- `yolo11s.pt` o modelo custom
+- tracking para evitar duplicados
+- ROI por vista
 - servicio `systemd`
-- dashboard web con timeline de eventos
+- reverse proxy con Nginx
 
-## Cuellos de botella reales
+## Cuellos de botella
 
-1. **RTSP inestable**: muchas cámaras baratas cortan frames o introducen latencia.
-2. **Falsos positivos**: con gato funciona, pero depende mucho del ángulo, luz y distancia.
-3. **CPU**: varias cámaras + modelo grande saturan rápido.
-4. **Spam de alertas**: por eso ya dejé cooldown por cámara.
+1. RTSP inestable o con buffering alto.
+2. Streams dobles en alta resolución consumen más CPU.
+3. MJPEG web también consume CPU porque codifica JPEG constantemente.
+4. El split ayuda, pero duplica vistas lógicas si una cámara se parte en dos.
 
-## Siguiente mejora natural
+## Próxima mejora recomendada
 
-- Agregar ROI por cámara para no analizar toda la escena.
-- Crear modo `snapshot_on_track` para avisar una sola vez por evento.
-- Entrenar modelo custom si tus cámaras son nocturnas o muy gran angular.
-- Añadir interfaz web Flask para ver eventos, logs y estado RTSP.
+La siguiente iteración natural sería:
 
-## Notas
+- definir ROI por cada mitad
+- grabar clips cortos además de fotos
+- panel con logs en vivo
+- filtros por cámara y exportación de eventos
+- ejecutar como servicio Linux
 
-- El modelo preentrenado debe reconocer la clase `cat`.
-- En la primera ejecución, Ultralytics puede descargar el modelo si no existe localmente.
-- Si tu OpenCV no abre RTSP con `CAP_FFMPEG`, revisa que el build tenga soporte FFmpeg/GStreamer.
+## Seguridad
+
+Si un token de Telegram quedó expuesto en consola o capturas, regénéralo en `@BotFather` antes de usar este proyecto en serio.
