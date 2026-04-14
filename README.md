@@ -1,129 +1,121 @@
-# CatFinder RTSP Web MVP
+# CatFinder RTSP Monitor – v2
 
-MVP listo para Linux que hace esto:
+Sistema de vigilancia con detección de objetos YOLO sobre streams RTSP,
+alertas Telegram y panel web en tiempo real.
 
-1. Se conecta a una o varias cámaras RTSP.
-2. Detecta gatos con YOLO.
-3. Envía alertas con imagen por Telegram.
-4. Guarda captura cruda, captura anotada y metadatos JSON.
-5. Expone una interfaz web simple con Bootstrap.
-6. Soporta cámaras de doble lente o streams compuestos con corte **vertical** u **horizontal**.
+## Qué hay de nuevo en v2
 
-## Qué mejora esta versión
-
-Además del detector base, esta versión agrega:
-
-- Vista web en tiempo real por navegador.
-- Split de una transmisión en dos vistas separadas.
-- Split vertical: izquierda / derecha.
-- Split horizontal: superior / inferior.
-- Ratio configurable por cámara para mover la línea de corte.
-- Panel con eventos recientes y estado por vista.
+| Área | Mejora |
+|------|--------|
+| **Telegram** | Asíncrono (cola no bloqueante) y completamente **opcional** |
+| **Frontend** | Auto-refresh cada 3 s sin recargar página |
+| **Frontend** | Tabla de eventos con thumbnails + modal de imagen |
+| **Frontend** | Toast de notificación en nuevas detecciones |
+| **Frontend** | Botón fullscreen por stream |
+| **Frontend** | Toggle anotado/crudo por vista |
+| **Frontend** | Barra de estadísticas global en tiempo real |
+| **Backend** | Nuevo endpoint `/stream/raw/<view_id>` |
+| **Backend** | Nuevo endpoint `/api/events?page=N&page_size=M` |
+| **Backend** | Nuevo endpoint `/captures/<path>` para servir imágenes |
+| **Backend** | Soporte de **ROI por vista** (`CAMERA_ROIS`) |
+| **Backend** | `LOG_LEVEL` configurable en `.env` |
+| **Backend** | `TELEGRAM_ENABLED` toggle explícito |
+| **Backend** | Puerto por defecto corregido a `8080` en código y `.env` |
+| **Backend** | `ViewConfig` reutilizado en lugar de recrearse por frame |
+| **Backend** | Recuento de detecciones acumulado por vista |
+| **Infra** | `Dockerfile` incluido |
+| **Infra** | `catfinder.service` (systemd) incluido |
 
 ## Arquitectura
 
 ```text
-RTSP camera física
-   -> OpenCV VideoCapture
-      -> split opcional (none / vertical / horizontal)
-         -> vista 1
-         -> vista 2
-            -> YOLO inference por vista
-               -> guardar JPG + JSON
-               -> sendPhoto a Telegram
-               -> publicar MJPEG en Flask
+RTSP camera
+  └─> OpenCV VideoCapture
+        └─> split opcional (none / vertical / horizontal)
+              ├─> vista 1  ─> YOLO inference ─> ROI filter
+              └─> vista 2  ─> YOLO inference ─> ROI filter
+                                   │
+                    ┌──────────────┼──────────────────┐
+                    ▼              ▼                   ▼
+              guardar JPG   Telegram (async)     Flask MJPEG
+              + JSON        notifier             + API + UI
 ```
 
-## Requisitos
-
-- Linux
-- Python 3.10+
-- FFmpeg/GStreamer en el sistema ayuda bastante para RTSP
-
-## Instalación
+## Instalación rápida
 
 ```bash
-cd catfinder_web_mvp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 cp example.env .env
+# edita .env
+python src/main.py
 ```
 
-Después edita `.env`.
+Abre `http://127.0.0.1:8080` en el navegador.
 
-## Variables clave
+## Variables de entorno clave
 
-### 1) Cámara RTSP
+### Cámaras
 
 ```env
 RTSP_URLS=patio=rtsp://usuario:clave@192.168.1.50:554/stream1
+CAMERA_SPLITS=patio=vertical       # none | vertical | horizontal
+CAMERA_SPLIT_RATIOS=patio=0.5
 ```
 
-También puedes poner varias:
+### ROI por vista (nuevo en v2)
+
+Filtra detecciones fuera del área definida. Las coordenadas son
+píxeles relativos a la vista (después del split).
 
 ```env
-RTSP_URLS=patio=rtsp://ip1/stream1,entrada=rtsp://ip2/stream1
+# Formato: viewid=x1:y1:x2:y2
+CAMERA_ROIS=patio__left=0:100:640:480,patio__right=50:0:620:480
 ```
 
-### 2) Telegram
+### Telegram (ahora opcional)
 
 ```env
+TELEGRAM_ENABLED=true   # false para deshabilitar sin errores
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 
-### 3) Split de cámara doble lente
-
-Ejemplo vertical:
+### Log
 
 ```env
-CAMERA_SPLITS=patio=vertical
-CAMERA_SPLIT_RATIOS=patio=0.5
+LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR
 ```
 
-Eso crea dos vistas web y dos canales lógicos de detección:
+## Endpoints API
 
-- `patio / izquierda`
-- `patio / derecha`
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /` | Panel web |
+| `GET /stream/<view_id>` | Stream MJPEG anotado |
+| `GET /stream/raw/<view_id>` | Stream MJPEG sin anotaciones *(nuevo)* |
+| `GET /api/status` | JSON completo de estado |
+| `GET /api/events?page=0&page_size=50` | Lista de eventos paginada *(nuevo)* |
+| `GET /captures/<path>` | Imagen de captura guardada *(nuevo)* |
+| `GET /health` | Health check |
 
-Ejemplo horizontal:
-
-```env
-CAMERA_SPLITS=patio=horizontal
-CAMERA_SPLIT_RATIOS=patio=0.5
-```
-
-Eso crea:
-
-- `patio / superior`
-- `patio / inferior`
-
-### 4) Web
-
-```env
-WEB_HOST=0.0.0.0
-WEB_PORT=8080
-```
-
-## Ejecución
+## Docker
 
 ```bash
-source .venv/bin/activate
-python src/main.py
+docker build -t catfinder .
+docker run --env-file .env -p 8080:8080 -v $(pwd)/captures:/app/captures catfinder
 ```
 
-Luego abre en el navegador:
+## systemd
 
-```text
-http://IP_DE_TU_EQUIPO:8080
-```
-
-Si lo ejecutas en la misma máquina:
-
-```text
-http://127.0.0.1:8080
+```bash
+sudo cp catfinder.service /etc/systemd/system/
+# Edita User= y WorkingDirectory= en el archivo
+sudo systemctl daemon-reload
+sudo systemctl enable --now catfinder
+sudo journalctl -u catfinder -f
 ```
 
 ## Archivos generados
@@ -136,82 +128,8 @@ captures/
     20260413_120010_left.json
 ```
 
-El JSON guarda:
-
-- cámara física
-- vista lógica
-- tipo de split
-- bbox
-- confianza
-- timestamp UTC/local
-- ruta de archivos
-
-## Cómo usar el split correctamente
-
-### Caso 1: cámara normal
-Usa:
-
-```env
-CAMERA_SPLITS=patio=none
-```
-
-### Caso 2: stream con dos lentes lado a lado
-Usa:
-
-```env
-CAMERA_SPLITS=patio=vertical
-CAMERA_SPLIT_RATIOS=patio=0.5
-```
-
-### Caso 3: stream con una imagen arriba y otra abajo
-Usa:
-
-```env
-CAMERA_SPLITS=patio=horizontal
-CAMERA_SPLIT_RATIOS=patio=0.5
-```
-
-### Caso 4: la línea de corte no está al centro
-Ajusta el ratio. Ejemplo:
-
-```env
-CAMERA_SPLIT_RATIOS=patio=0.47
-```
-
-Con eso cortas al 47% del ancho o alto, según el modo.
-
-## Rendimiento real
-
-### Opción simple
-- `MODEL_PATH=yolo11n.pt`
-- `PROCESS_EVERY_N_FRAMES=5`
-- 1 a 3 cámaras en CPU razonable
-
-### Opción más robusta
-- GPU NVIDIA con CUDA
-- `yolo11s.pt` o modelo custom
-- tracking para evitar duplicados
-- ROI por vista
-- servicio `systemd`
-- reverse proxy con Nginx
-
-## Cuellos de botella
-
-1. RTSP inestable o con buffering alto.
-2. Streams dobles en alta resolución consumen más CPU.
-3. MJPEG web también consume CPU porque codifica JPEG constantemente.
-4. El split ayuda, pero duplica vistas lógicas si una cámara se parte en dos.
-
-## Próxima mejora recomendada
-
-La siguiente iteración natural sería:
-
-- definir ROI por cada mitad
-- grabar clips cortos además de fotos
-- panel con logs en vivo
-- filtros por cámara y exportación de eventos
-- ejecutar como servicio Linux
-
 ## Seguridad
 
-Si un token de Telegram quedó expuesto en consola o capturas, regénéralo en `@BotFather` antes de usar este proyecto en serio.
+- Los tokens Telegram no aparecen en logs.
+- El endpoint `/captures/` valida que la ruta esté dentro de `SAVE_DIR` (no path traversal).
+- Para exponer al exterior usa un reverse proxy (Nginx/Caddy) con autenticación básica.
