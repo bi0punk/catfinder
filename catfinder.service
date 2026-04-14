@@ -1,0 +1,15 @@
+[Unit]
+Description=CatFinder RTSP Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/opt/catfinder
+ExecStart=/opt/catfinder/.venv/bin/python src/main.py
+EnvironmentFile=/opt/catfinder/.env
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
