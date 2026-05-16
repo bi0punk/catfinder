@@ -263,9 +263,12 @@
             <div class="col-span-2" style="grid-column:1/-1">
               <span class="label">Objeto</span><br>
               <span class="val" id="obj-{{ view.view_id | replace('__','-') }}">{{ view.last_detection_label }}</span>
-              {% if view.last_detection_conf %}
-              <span class="conf-badge ms-1 mono" id="conf-{{ view.view_id | replace('__','-') }}">{{ view.last_detection_conf }}</span>
-              {% endif %}
+              {# [B5 FIX] conf-badge siempre presente en el DOM; JS puede actualizarlo
+                 aunque la confianza sea 0.0 (que era falsy y el elemento no se renderizaba). #}
+              <span class="conf-badge ms-1 mono" id="conf-{{ view.view_id | replace('__','-') }}"
+                    {% if not view.last_detection_conf %}style="display:none"{% endif %}>
+                {{ view.last_detection_conf }}
+              </span>
               <span class="ms-2 text-muted" style="font-size:.73rem" id="cnt-{{ view.view_id | replace('__','-') }}">({{ view.detection_count }} total)</span>
             </div>
           </div>
@@ -356,9 +359,11 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ─── Config ───────────────────────────────────────
-const POLL_INTERVAL_MS   = 3000;
-const STATUS_URL         = '/api/status';
-const imgModal           = new bootstrap.Modal(document.getElementById('imgModal'));
+const POLL_INTERVAL_MS = 3000;
+const STATUS_URL       = '/api/status';
+// [B10 FIX] Límite para knownEvents que coincide con MAX_EVENTS del servidor.
+const MAX_KNOWN_EVENTS = {{ max_events }};
+const imgModal         = new bootstrap.Modal(document.getElementById('imgModal'));
 
 // ─── Helpers: safe element ID ─────────────────────
 function safeId(viewId) {
@@ -369,17 +374,29 @@ function safeId(viewId) {
 function updateCards(views) {
   views.forEach(view => {
     const sid = safeId(view.view_id);
+
     const badge = document.getElementById(`badge-${sid}`);
     if (badge) {
       badge.textContent = view.status;
       badge.className = `status-badge status-${view.status}`;
     }
-    setText(`fc-${sid}`,   view.frame_counter);
-    setText(`lf-${sid}`,   view.last_frame_at);
-    setText(`ld-${sid}`,   view.last_detection_at);
-    setText(`obj-${sid}`,  view.last_detection_label);
-    setText(`conf-${sid}`, view.last_detection_conf || '');
-    setText(`cnt-${sid}`,  `(${view.detection_count} total)`);
+
+    setText(`fc-${sid}`,  view.frame_counter);
+    setText(`lf-${sid}`,  view.last_frame_at);
+    setText(`ld-${sid}`,  view.last_detection_at);
+    setText(`obj-${sid}`, view.last_detection_label);
+    setText(`cnt-${sid}`, `(${view.detection_count} total)`);
+
+    // [B5 FIX] conf-badge siempre existe; sólo se muestra u oculta según el valor.
+    const confEl = document.getElementById(`conf-${sid}`);
+    if (confEl) {
+      if (view.last_detection_conf) {
+        confEl.textContent    = view.last_detection_conf;
+        confEl.style.display  = '';
+      } else {
+        confEl.style.display  = 'none';
+      }
+    }
   });
 }
 
@@ -390,8 +407,8 @@ function setText(id, val) {
 
 // ─── Update stats bar ─────────────────────────────
 function updateStats(snap) {
-  setText('stat-online',      snap.online_views);
-  setText('stat-detections',  snap.total_detections);
+  setText('stat-online',     snap.online_views);
+  setText('stat-detections', snap.total_detections);
 
   const dot = document.getElementById('dot-online');
   if (dot) dot.className = snap.online_views > 0 ? 'dot dot-green' : 'dot dot-gray';
@@ -401,9 +418,72 @@ function updateStats(snap) {
 }
 
 // ─── Known event timestamps (dedup) ───────────────
+// [B10 FIX] Set acotado: cuando supera MAX_KNOWN_EVENTS se descarta la
+//           entrada más antigua para evitar memory leak en sesiones largas.
+const knownEventsOrder = [];  // mantiene el orden de inserción
 const knownEvents = new Set(
   [...document.querySelectorAll('#events-tbody tr[data-ts]')].map(r => r.dataset.ts)
 );
+// Inicializar knownEventsOrder con los timestamps ya en el DOM
+document.querySelectorAll('#events-tbody tr[data-ts]').forEach(r => {
+  knownEventsOrder.push(r.dataset.ts);
+});
+
+function trackEvent(ts) {
+  if (knownEvents.has(ts)) return false;
+  if (knownEventsOrder.length >= MAX_KNOWN_EVENTS) {
+    const oldest = knownEventsOrder.shift();
+    knownEvents.delete(oldest);
+  }
+  knownEvents.add(ts);
+  knownEventsOrder.push(ts);
+  return true;
+}
+
+// ─── Build event row (safe, sin XSS) ─────────────
+// [B6 FIX] Se construye el <tr> con createElement + textContent / setAttribute
+//          en lugar de innerHTML con datos crudos de la API, evitando XSS.
+function buildEventRow(ev) {
+  const tr = document.createElement('tr');
+  tr.dataset.ts  = ev.ts_utc;
+  tr.className   = 'event-new';
+
+  // Columna thumbnail
+  const tdThumb = document.createElement('td');
+  const imgSrc  = `/captures/${encodeURIComponent(ev.alert_image).replace(/%2F/g, '/')}`;
+  const img = document.createElement('img');
+  img.src              = imgSrc;
+  img.className        = 'thumb-btn';
+  img.width            = 48;
+  img.height           = 36;
+  img.style.objectFit  = 'cover';
+  img.alt              = 'alerta';
+  img.addEventListener('error', () => { img.style.opacity = '.2'; });
+  img.addEventListener('click', () => openModal(imgSrc, `${ev.ts_local} – ${ev.camera_name}`));
+  tdThumb.appendChild(img);
+
+  // Columnas de texto — textContent escapa automáticamente HTML
+  const tdTime   = document.createElement('td');  tdTime.className = 'mono';
+  tdTime.textContent = ev.ts_local;
+
+  const tdCam  = document.createElement('td');
+  tdCam.textContent = ev.camera_name;
+
+  const tdView = document.createElement('td');
+  tdView.textContent = ev.view_id;
+
+  const tdLabel = document.createElement('td');
+  tdLabel.textContent = ev.label;
+
+  const tdConf  = document.createElement('td');
+  const confBadge = document.createElement('span');
+  confBadge.className  = 'conf-badge mono';
+  confBadge.textContent = ev.confidence;
+  tdConf.appendChild(confBadge);
+
+  tr.append(tdThumb, tdTime, tdCam, tdView, tdLabel, tdConf);
+  return tr;
+}
 
 function updateEvents(events) {
   if (!events.length) return;
@@ -414,31 +494,9 @@ function updateEvents(events) {
 
   let added = 0;
   events.forEach(ev => {
-    if (knownEvents.has(ev.ts_utc)) return;
-    knownEvents.add(ev.ts_utc);
+    if (!trackEvent(ev.ts_utc)) return;
     added++;
-
-    const tr = document.createElement('tr');
-    tr.dataset.ts = ev.ts_utc;
-    tr.className  = 'event-new';
-    tr.innerHTML  = `
-      <td>
-        <img src="/captures/${ev.alert_image}"
-             class="thumb-btn"
-             width="48" height="36"
-             style="object-fit:cover"
-             onclick="openModal('/captures/${ev.alert_image}','${ev.ts_local} – ${ev.camera_name}')"
-             onerror="this.style.opacity='.2'"
-             alt="alerta">
-      </td>
-      <td class="mono">${ev.ts_local}</td>
-      <td>${ev.camera_name}</td>
-      <td>${ev.view_id}</td>
-      <td>${ev.label}</td>
-      <td><span class="conf-badge mono">${ev.confidence}</span></td>`;
-    tbody.insertBefore(tr, tbody.firstChild);
-
-    // Toast
+    tbody.insertBefore(buildEventRow(ev), tbody.firstChild);
     showToast(ev);
   });
 
@@ -452,27 +510,39 @@ function showToast(ev) {
   const zone  = document.getElementById('toast-zone');
   const toast = document.createElement('div');
   toast.className = 'cf-toast';
-  toast.innerHTML = `
-    <div class="icon">🐱</div>
-    <div>
-      <div class="title">${ev.label.charAt(0).toUpperCase() + ev.label.slice(1)} detectado</div>
-      <div class="sub">${ev.camera_name} &nbsp;·&nbsp; conf ${ev.confidence} &nbsp;·&nbsp; ${ev.ts_local}</div>
-    </div>`;
+
+  const icon = document.createElement('div');
+  icon.className = 'icon';
+  icon.textContent = '🐱';
+
+  const body  = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'title';
+  // [B6 FIX] textContent en lugar de innerHTML para prevenir XSS en toasts.
+  const labelCap = ev.label.charAt(0).toUpperCase() + ev.label.slice(1);
+  title.textContent = `${labelCap} detectado`;
+
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = `${ev.camera_name} · conf ${ev.confidence} · ${ev.ts_local}`;
+
+  body.append(title, sub);
+  toast.append(icon, body);
   zone.appendChild(toast);
   setTimeout(() => toast.remove(), 5000);
 }
 
 // ─── Image modal ──────────────────────────────────
 function openModal(src, title) {
-  document.getElementById('imgModalSrc').src      = src;
-  document.getElementById('imgModalTitle').textContent = title;
-  document.getElementById('imgModalDownload').href = src;
+  document.getElementById('imgModalSrc').src            = src;
+  document.getElementById('imgModalTitle').textContent  = title;
+  document.getElementById('imgModalDownload').href      = src;
   imgModal.show();
 }
 
 // ─── Raw / annotated toggle ───────────────────────
 function toggleRaw(viewId, btn) {
-  const annotated = btn.dataset.annotated === 'true';
+  const annotated    = btn.dataset.annotated === 'true';
   const newAnnotated = !annotated;
   btn.dataset.annotated = String(newAnnotated);
   btn.innerHTML = newAnnotated
@@ -511,6 +581,9 @@ async function poll() {
   }
 }
 
+// [B2 FIX] poll() se invoca inmediatamente al cargar la página,
+//          sin esperar los 3 s del primer tick del intervalo.
+poll();
 setInterval(poll, POLL_INTERVAL_MS);
 </script>
 </body>
