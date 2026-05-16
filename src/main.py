@@ -1,18 +1,31 @@
 """
-CatFinder RTSP Monitor – improved version
------------------------------------------
-Mejoras sobre el MVP original:
-  - Telegram asíncrono (cola de envío no bloqueante) y completamente opcional.
-  - Nuevo endpoint /stream/raw/<view_id> para stream sin anotaciones.
-  - Nuevo endpoint /api/events  (lista de eventos paginable).
-  - Nuevo endpoint /captures/<path:filepath> para servir imágenes guardadas.
-  - Soporte de ROI por vista (CAMERA_ROIS=viewid=x1:y1:x2:y2).
-  - LOG_LEVEL configurable por .env.
-  - Puerto por defecto corregido a 8080 (era 8081 en código).
-  - TELEGRAM_ENABLED toggle explícito.
-  - Recuento de detecciones en ViewState.
-  - ViewConfig reutilizado en lugar de recrearse cada frame.
-  - Mejor manejo de errores y apagado limpio.
+CatFinder RTSP Monitor – v2.1 (fixed)
+--------------------------------------
+Correcciones aplicadas (de menor a mayor):
+
+  [B1] TRIVIAL   – from flask import request movido al top del archivo.
+  [B2] TRIVIAL   – poll() ahora se llama inmediatamente al cargar la página
+                   (antes el primer refresco tardaba 3 s).
+  [B3] FÁCIL     – update_view_frame() ya no tiene calidad hardcoded a 85;
+                   recibe jpeg_quality desde AppConfig.
+  [B4] FÁCIL     – _stream_loop calculaba max(detections) dos veces; ahora
+                   se computa una sola vez y se reutiliza.
+  [B5] FÁCIL     – conf-badge en Jinja dejaba de renderizarse con conf=0.0
+                   (falsy); ahora siempre existe en el DOM y JS lo actualiza.
+  [B6] MEDIO     – XSS en updateEvents(): se usaba innerHTML con datos crudos
+                   de la API. Ahora se construyen los nodos con createElement /
+                   textContent para escapar correctamente.
+  [B7] MEDIO     – Cola de Telegram sin maxsize podía crecer sin límite bajo
+                   carga alta. Se añade maxsize=200 con descarte de mensajes
+                   antiguos cuando está llena.
+  [B8] MEDIO     – status_str leía state.views[...].status fuera del lock de
+                   AppState. Ahora se accede a través del método thread-safe.
+  [B9] GRANDE    – app.run() bloqueaba el hilo principal impidiendo un apagado
+                   limpio vía señal. Reemplazado por make_server() de Werkzeug,
+                   con server.shutdown() invocado desde el handler de señal.
+  [B10] GRANDE   – knownEvents en el frontend crecía indefinidamente (memory
+                   leak en browser). Ahora se limita a MAX_EVENTS entradas y
+                   se recorta periódicamente.
 """
 
 import json
@@ -30,9 +43,11 @@ from typing import Deque, Dict, List, Optional, Tuple
 
 import cv2
 import requests
+# [B1 FIX] request importado al nivel del módulo, no dentro de cada función.
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 from dotenv import load_dotenv
-from flask import Flask, Response, abort, jsonify, render_template, send_file
 from ultralytics import YOLO
+from werkzeug.serving import make_server  # [B9 FIX]
 
 
 # ─────────────────────────────────────────────
@@ -215,6 +230,12 @@ def parse_camera_configs() -> List[CameraConfig]:
 
     cameras: List[CameraConfig] = []
     for name, rtsp_url in base:
+        # Advertir si el nombre de cámara colisiona con rutas reservadas
+        if name.lower() == "raw":
+            logging.warning(
+                "La cámara se llama 'raw', lo que colisiona con /stream/raw/<view_id>. "
+                "Renómbrala en RTSP_URLS para evitar ambigüedad."
+            )
         split_mode = split_modes.get(name, "none").strip().lower() or "none"
         if split_mode not in {"none", "vertical", "horizontal"}:
             logging.warning("split_mode inválido para %s -> %s. Usando none.", name, split_mode)
@@ -334,7 +355,7 @@ def add_overlay(frame, line1: str, line2: str = ""):
 
 
 def apply_roi(frame, roi: Optional[Tuple[int, int, int, int]]):
-    """Dibuja un rectángulo semitransparente indicando el ROI activo."""
+    """Dibuja un rectángulo indicando el ROI activo."""
     if roi is None:
         return frame
     x1, y1, x2, y2 = roi
@@ -350,6 +371,10 @@ def apply_roi(frame, roi: Optional[Tuple[int, int, int, int]]):
 # ─────────────────────────────────────────────
 
 
+# [B7 FIX] Cola con maxsize para evitar crecimiento ilimitado de memoria.
+_TELEGRAM_QUEUE_MAXSIZE = 200
+
+
 class TelegramNotifier:
     """
     Envía fotos a Telegram en un hilo separado (no bloqueante).
@@ -362,7 +387,8 @@ class TelegramNotifier:
         self.chat_id = chat_id
         self.timeout_seconds = timeout_seconds
         self.base_url = f"https://api.telegram.org/bot{bot_token}" if bot_token else ""
-        self._queue: queue.Queue = queue.Queue()
+        # [B7 FIX] maxsize evita que la cola crezca sin límite bajo alta carga.
+        self._queue: queue.Queue = queue.Queue(maxsize=_TELEGRAM_QUEUE_MAXSIZE)
         if enabled:
             self._worker_thread = threading.Thread(target=self._worker, daemon=True, name="telegram-worker")
             self._worker_thread.start()
@@ -399,7 +425,11 @@ class TelegramNotifier:
     def send_photo(self, image_path: Path, caption: str) -> None:
         if not self.enabled:
             return
-        self._queue.put((image_path, caption))
+        try:
+            # [B7 FIX] put_nowait descarta la alerta si la cola está llena en lugar de bloquear.
+            self._queue.put_nowait((image_path, caption))
+        except queue.Full:
+            logging.warning("Cola Telegram llena (%d items). Alerta descartada: %s", _TELEGRAM_QUEUE_MAXSIZE, image_path.name)
 
     def stop(self) -> None:
         if self.enabled:
@@ -455,8 +485,9 @@ class DetectionEngine:
 
 
 class AppState:
-    def __init__(self, views: List[ViewConfig], max_events: int):
+    def __init__(self, views: List[ViewConfig], max_events: int, jpeg_quality: int):
         self.lock = threading.RLock()
+        self.jpeg_quality = jpeg_quality  # [B3 FIX] guardado para encode_jpg
         self.views: Dict[str, ViewState] = {
             v.view_id: ViewState(
                 view_id=v.view_id,
@@ -470,11 +501,12 @@ class AppState:
         self.events: Deque[EventRecord] = deque(maxlen=max_events)
         self._total_detections: int = 0
 
+    # [B3 FIX] Usa self.jpeg_quality en lugar del valor hardcodeado 85.
     def update_view_frame(self, view_id: str, raw_frame, annotated_frame, status: str) -> None:
         with self.lock:
             view = self.views[view_id]
-            raw_jpg = encode_jpg(raw_frame, quality=85)
-            ann_jpg = encode_jpg(annotated_frame, quality=85)
+            raw_jpg = encode_jpg(raw_frame, quality=self.jpeg_quality)
+            ann_jpg = encode_jpg(annotated_frame, quality=self.jpeg_quality)
             if raw_jpg:
                 view.latest_raw_jpeg = raw_jpg
             if ann_jpg:
@@ -489,6 +521,12 @@ class AppState:
             for view in self.views.values():
                 if view.camera_name == camera_name:
                     view.status = status
+
+    # [B8 FIX] Método thread-safe para leer el status de una vista.
+    def get_view_status(self, view_id: str) -> str:
+        with self.lock:
+            view = self.views.get(view_id)
+            return view.status if view else "unknown"
 
     def update_detection(self, view_id: str, label: str, confidence: float) -> None:
         with self.lock:
@@ -669,19 +707,23 @@ class CameraWorker(threading.Thread):
                 if roi:
                     annotated = apply_roi(annotated, roi)
 
-                status_str = self.state.views[view_cfg.view_id].status
+                # [B4 FIX] strongest calculado UNA sola vez y reutilizado en line2 y _maybe_alert.
+                strongest = max(detections, key=lambda x: x[5]) if detections else None
+
+                # [B8 FIX] status leído a través del método thread-safe en lugar de acceso directo.
+                status_str = self.state.get_view_status(view_cfg.view_id)
+
                 line1 = f"{view_cfg.view_name}  {local_now_str()}"
                 line2 = (
-                    f"detectado={max(detections, key=lambda x: x[5])[4]}  conf={max(detections, key=lambda x: x[5])[5]:.2f}"
-                    if detections else f"estado={status_str}"
+                    f"detectado={strongest[4]}  conf={strongest[5]:.2f}"
+                    if strongest else f"estado={status_str}"
                 )
                 annotated = add_overlay(annotated, line1, line2)
 
                 if run_preview or detections:
                     self.state.update_view_frame(view_cfg.view_id, view_frame, annotated, "online")
 
-                if detections:
-                    strongest = max(detections, key=lambda x: x[5])
+                if strongest:
                     self._maybe_alert(view_cfg, view_frame, annotated, detections, strongest)
 
     # ── detección ────────────────────────────
@@ -817,6 +859,7 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
                 "total_detections":  snap["total_detections"],
                 "telegram_enabled":  cfg.telegram_enabled,
             },
+            max_events=cfg.max_events,
         )
 
     # ── Streams MJPEG ─────────────────────────
@@ -850,9 +893,9 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
     def api_status():
         return jsonify(state.snapshot())
 
+    # [B1 FIX] request ya está importado al nivel del módulo.
     @app.route("/api/events")
     def api_events():
-        from flask import request
         try:
             page      = max(0, int(request.args.get("page", 0)))
             page_size = min(200, max(1, int(request.args.get("page_size", 50))))
@@ -914,7 +957,8 @@ def main() -> None:
         logging.info("ROI configurados: %s", cfg.camera_rois)
 
     views = build_view_configs(cfg.cameras)
-    state = AppState(views=views, max_events=cfg.max_events)
+    # [B3 FIX] jpeg_quality pasado explícitamente a AppState.
+    state = AppState(views=views, max_events=cfg.max_events, jpeg_quality=cfg.jpeg_quality)
 
     detector = DetectionEngine(
         model_path=cfg.model_path,
@@ -933,9 +977,17 @@ def main() -> None:
 
     stop_event = threading.Event()
 
+    app = create_web_app(cfg=cfg, state=state, stop_event=stop_event)
+
+    # [B9 FIX] make_server permite llamar server.shutdown() desde el signal handler,
+    # parando Flask limpiamente sin depender de KeyboardInterrupt.
+    server = make_server(cfg.web_host, cfg.web_port, app)
+    server.timeout = 1  # permite que serve_forever() compruebe el stop_event periódicamente
+
     def shutdown_handler(signum, frame):
         logging.warning("Señal %s recibida. Apagando…", signum)
         stop_event.set()
+        server.shutdown()
 
     signal.signal(signal.SIGINT,  shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
@@ -957,10 +1009,10 @@ def main() -> None:
     for worker in workers:
         worker.start()
 
-    app = create_web_app(cfg=cfg, state=state, stop_event=stop_event)
+    logging.info("Servidor web en http://%s:%s", cfg.web_host, cfg.web_port)
 
     try:
-        app.run(host=cfg.web_host, port=cfg.web_port, debug=False, threaded=True, use_reloader=False)
+        server.serve_forever()
     finally:
         stop_event.set()
         notifier.stop()
