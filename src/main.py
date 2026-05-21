@@ -38,7 +38,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Tuple
 
@@ -148,7 +148,7 @@ def setup_logging(level_name: str = "INFO") -> None:
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def local_now_str() -> str:
@@ -279,7 +279,7 @@ def load_config() -> AppConfig:
         target_classes=target_classes,
         confidence_threshold=float(os.getenv("CONFIDENCE_THRESHOLD", "0.55")),
         cooldown_seconds=int(os.getenv("COOLDOWN_SECONDS", "60")),
-        process_every_n_frames=int(os.getenv("PROCESS_EVERY_N_FRAMES", "5")),
+        process_every_n_frames=max(1, int(os.getenv("PROCESS_EVERY_N_FRAMES", "5"))),
         preview_every_n_frames=max(1, int(os.getenv("PREVIEW_EVERY_N_FRAMES", "2"))),
         save_dir=Path(os.getenv("SAVE_DIR", "captures")).resolve(),
         reconnect_delay_seconds=int(os.getenv("RECONNECT_DELAY_SECONDS", "5")),
@@ -319,14 +319,6 @@ def build_view_configs(cameras: List[CameraConfig]) -> List[ViewConfig]:
 def encode_jpg(frame, quality: int) -> Optional[bytes]:
     ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
     return buffer.tobytes() if ok else None
-
-
-def save_jpg(frame, output_path: Path, quality: int) -> bool:
-    encoded = encode_jpg(frame, quality)
-    if encoded is None:
-        return False
-    output_path.write_bytes(encoded)
-    return True
 
 
 def draw_detections(frame, detections: List[Tuple[int, int, int, int, str, float]]):
@@ -676,7 +668,7 @@ class InferenceWorker(threading.Thread):
         cfg: AppConfig,
         stop_event: threading.Event,
         infer_queue: queue.Queue,
-        frame_pool: FramePool,
+        frame_pools: Dict[str, FramePool],
     ):
         super().__init__(name=f"infer:{camera_name}", daemon=True)
         self.detector = detector
@@ -684,7 +676,7 @@ class InferenceWorker(threading.Thread):
         self.cfg = cfg
         self.stop_event = stop_event
         self.infer_queue = infer_queue
-        self.frame_pool = frame_pool
+        self.frame_pools = frame_pools
 
     def run(self) -> None:
         while not self.stop_event.is_set():
@@ -722,7 +714,7 @@ class InferenceWorker(threading.Thread):
             line2 = f"detectado={strongest[4]}  conf={strongest[5]:.2f}" if strongest else ""
             annotated = add_overlay(annotated, f"{view_cfg.view_name}  {local_now_str()}", line2)
 
-            self.frame_pool.publish((view_cfg, view_frame, annotated, detections, strongest))
+            self.frame_pools[view_cfg.view_id].publish((view_cfg, view_frame, annotated, detections, strongest))
 
 
 # ─────────────────────────────────────────────
@@ -756,7 +748,7 @@ class CameraWorker(threading.Thread):
         self.camera_dir = self.cfg.save_dir / self.camera.name
         ensure_dir(self.camera_dir)
         self.infer_queue: queue.Queue = queue.Queue(maxsize=2)
-        self.frame_pool = FramePool()
+        self.frame_pools: Dict[str, FramePool] = {vc.view_id: FramePool() for vc in self.view_configs.values()}
         self.infer_worker: Optional[InferenceWorker] = None
         self.disk_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=2, thread_name_prefix=f"disk:{camera.name}"
@@ -772,7 +764,7 @@ class CameraWorker(threading.Thread):
             cfg=self.cfg,
             stop_event=self.stop_event,
             infer_queue=self.infer_queue,
-            frame_pool=self.frame_pool,
+            frame_pools=self.frame_pools,
         )
         self.infer_worker.start()
 
@@ -850,7 +842,7 @@ class CameraWorker(threading.Thread):
                         pass
 
                 if run_preview:
-                    result = self.frame_pool.latest(timeout=0)
+                    result = self.frame_pools[view_cfg.view_id].latest(timeout=0)
                     if result is not None:
                         vc, raw_fr, ann_fr, dets, strongest = result
                         self.state.update_view_frame(vc.view_id, raw_fr, ann_fr, "online")
@@ -901,8 +893,6 @@ class CameraWorker(threading.Thread):
 
         prefix = f"{ts_file}_{view_cfg.crop_label}"
         cam_dir = self.camera_dir
-        quality = self.cfg.jpeg_quality
-
         def _write_async():
             rp = cam_dir / f"{prefix}_raw.jpg"
             ap = cam_dir / f"{prefix}_alert.jpg"
@@ -918,7 +908,7 @@ class CameraWorker(threading.Thread):
             mp.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
             logging.info(
                 "ALERT | camera=%s view=%s label=%s score=%.3f raw=%s ann=%s",
-                cam_dir.parent.name, prefix, label, score, ok_r, ok_a,
+                self.camera.name, prefix, label, score, ok_r, ok_a,
             )
 
         self.disk_pool.submit(_write_async)
@@ -1120,16 +1110,15 @@ def main() -> None:
     signal.signal(signal.SIGINT,  shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    workers = []
-    for camera in cfg.cameras:
+    def _init_worker(cam):
         detector = DetectionEngine(
             model_path=cfg.model_path,
             confidence_threshold=cfg.confidence_threshold,
             infer_imgsz=cfg.infer_imgsz,
         )
         target_ids = detector.resolve_target_ids(cfg.target_classes)
-        workers.append(CameraWorker(
-            camera=camera,
+        return CameraWorker(
+            camera=cam,
             view_configs=views,
             cfg=cfg,
             detector=detector,
@@ -1137,7 +1126,10 @@ def main() -> None:
             target_ids=target_ids,
             state=state,
             stop_event=stop_event,
-        ))
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(cfg.cameras)) as pool:
+        workers = list(pool.map(_init_worker, cfg.cameras))
 
     for worker in workers:
         worker.start()
