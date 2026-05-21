@@ -33,6 +33,7 @@ import logging
 import os
 import queue
 import signal
+import concurrent.futures
 import threading
 import time
 from collections import deque
@@ -404,8 +405,11 @@ class TelegramNotifier:
             item = self._queue.get()
             if item is None:
                 break
-            image_path, caption = item
-            self._send_sync(image_path, caption)
+            if isinstance(item, tuple):
+                if len(item) == 2:
+                    self._send_sync(item[0], item[1])
+                elif len(item) == 3:
+                    self._send_sync_bytes(*item)
             self._queue.task_done()
 
     def _send_sync(self, image_path: Path, caption: str) -> None:
@@ -427,14 +431,40 @@ class TelegramNotifier:
             sanitized = f"https://api.telegram.org/bot***{self.bot_token[-4:]}" if self.bot_token else ""
             logging.error("Telegram exception enviando %s (url=%s): %s", image_path.name, sanitized, exc)
 
+    def _send_sync_bytes(self, image_bytes: bytes, filename: str, caption: str) -> None:
+        url = f"{self.base_url}/sendPhoto"
+        try:
+            from io import BytesIO
+            response = requests.post(
+                url,
+                data={"chat_id": self.chat_id, "caption": caption},
+                files={"photo": (filename, BytesIO(image_bytes), "image/jpeg")},
+                timeout=self.timeout_seconds,
+                headers={"User-Agent": "CatFinder/2.1"},
+            )
+            if response.ok:
+                logging.info("Telegram OK -> %s", filename)
+            else:
+                logging.error("Telegram FAIL status=%s body=%s", response.status_code, response.text[:200])
+        except Exception as exc:
+            sanitized = f"https://api.telegram.org/bot***{self.bot_token[-4:]}" if self.bot_token else ""
+            logging.error("Telegram exception enviando %s (url=%s): %s", filename, sanitized, exc)
+
     def send_photo(self, image_path: Path, caption: str) -> None:
         if not self.enabled:
             return
         try:
-            # [B7 FIX] put_nowait descarta la alerta si la cola está llena en lugar de bloquear.
             self._queue.put_nowait((image_path, caption))
         except queue.Full:
             logging.warning("Cola Telegram llena (%d items). Alerta descartada: %s", _TELEGRAM_QUEUE_MAXSIZE, image_path.name)
+
+    def send_photo_bytes(self, image_bytes: bytes, filename: str, caption: str) -> None:
+        if not self.enabled:
+            return
+        try:
+            self._queue.put_nowait((image_bytes, filename, caption))
+        except queue.Full:
+            logging.warning("Cola Telegram llena (%d items). Alerta descartada: %s", _TELEGRAM_QUEUE_MAXSIZE, filename)
 
     def stop(self) -> None:
         if self.enabled:
@@ -601,6 +631,101 @@ class AppState:
 
 
 # ─────────────────────────────────────────────
+# Pool de frames (último frame, thread-safe)
+# ─────────────────────────────────────────────
+
+
+class FramePool:
+    """Retiene solo el frame más reciente. Publicador y consumidor
+       operan en hilos distintos sin bloqueo mutuo."""
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._frame = None
+
+    def publish(self, frame):
+        with self._cv:
+            self._frame = frame
+            self._cv.notify_all()
+
+    def latest(self, timeout=None):
+        with self._cv:
+            if self._frame is None:
+                self._cv.wait(timeout)
+            frame = self._frame
+            self._frame = None
+            return frame
+
+    def peek(self):
+        with self._cv:
+            return self._frame is not None
+
+
+# ─────────────────────────────────────────────
+# Worker de inferencia (hilo separado)
+# ─────────────────────────────────────────────
+
+
+class InferenceWorker(threading.Thread):
+    """Corre YOLO en un hilo dedicado para no bloquear la lectura de frames."""
+
+    def __init__(
+        self,
+        camera_name: str,
+        detector: DetectionEngine,
+        target_ids: List[int],
+        cfg: AppConfig,
+        stop_event: threading.Event,
+        infer_queue: queue.Queue,
+        frame_pool: FramePool,
+    ):
+        super().__init__(name=f"infer:{camera_name}", daemon=True)
+        self.detector = detector
+        self.target_ids = set(target_ids)
+        self.cfg = cfg
+        self.stop_event = stop_event
+        self.infer_queue = infer_queue
+        self.frame_pool = frame_pool
+
+    def run(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                view_cfg, view_frame = self.infer_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+            result = self.detector.infer(view_frame)
+            detections: List[Tuple[int, int, int, int, str, float]] = []
+
+            if result is not None and result.boxes is not None:
+                roi = self.cfg.camera_rois.get(view_cfg.view_id)
+                for box in result.boxes:
+                    cls_id = int(box.cls[0].item())
+                    score = float(box.conf[0].item())
+                    if cls_id not in self.target_ids:
+                        continue
+                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                    if roi:
+                        rx1, ry1, rx2, ry2 = roi
+                        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                        if not (rx1 <= cx <= rx2 and ry1 <= cy <= ry2):
+                            continue
+                    label = self.detector.names.get(cls_id, str(cls_id))
+                    detections.append((x1, y1, x2, y2, label, score))
+
+            annotated = draw_detections(view_frame, detections) if (detections and self.cfg.draw_boxes) else view_frame.copy()
+
+            roi = self.cfg.camera_rois.get(view_cfg.view_id)
+            if roi:
+                annotated = apply_roi(annotated, roi)
+
+            strongest = max(detections, key=lambda x: x[5]) if detections else None
+            line2 = f"detectado={strongest[4]}  conf={strongest[5]:.2f}" if strongest else ""
+            annotated = add_overlay(annotated, f"{view_cfg.view_name}  {local_now_str()}", line2)
+
+            self.frame_pool.publish((view_cfg, view_frame, annotated, detections, strongest))
+
+
+# ─────────────────────────────────────────────
 # Worker de cámara
 # ─────────────────────────────────────────────
 
@@ -630,10 +755,27 @@ class CameraWorker(threading.Thread):
         self.last_alert_at: Dict[str, float] = {}
         self.camera_dir = self.cfg.save_dir / self.camera.name
         ensure_dir(self.camera_dir)
+        self.infer_queue: queue.Queue = queue.Queue(maxsize=2)
+        self.frame_pool = FramePool()
+        self.infer_worker: Optional[InferenceWorker] = None
+        self.disk_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix=f"disk:{camera.name}"
+        )
 
     # ── stream ──────────────────────────────
 
     def run(self) -> None:
+        self.infer_worker = InferenceWorker(
+            camera_name=self.camera.name,
+            detector=self.detector,
+            target_ids=list(self.target_ids),
+            cfg=self.cfg,
+            stop_event=self.stop_event,
+            infer_queue=self.infer_queue,
+            frame_pool=self.frame_pool,
+        )
+        self.infer_worker.start()
+
         while not self.stop_event.is_set():
             cap = self._open_stream()
             if cap is None:
@@ -697,64 +839,23 @@ class CameraWorker(threading.Thread):
             run_detect  = (self.frame_count % self.cfg.process_every_n_frames  == 0)
             run_preview = (self.frame_count % self.cfg.preview_every_n_frames  == 0)
 
-            for view_cfg, view_frame in self._split_frame(frame):
-                detections: List[Tuple[int, int, int, int, str, float]] = []
-
-                if run_detect:
-                    detections = self._detect_targets(view_cfg.view_id, view_frame)
-
-                annotated = draw_detections(view_frame, detections) if (detections and self.cfg.draw_boxes) else view_frame.copy()
-
-                # Dibuja ROI si está definido
-                roi = self.cfg.camera_rois.get(view_cfg.view_id)
-                if roi:
-                    annotated = apply_roi(annotated, roi)
-
-                # [B4 FIX] strongest calculado UNA sola vez y reutilizado en line2 y _maybe_alert.
-                strongest = max(detections, key=lambda x: x[5]) if detections else None
-
-                # [B8 FIX] status leído a través del método thread-safe en lugar de acceso directo.
-                status_str = self.state.get_view_status(view_cfg.view_id)
-
-                line1 = f"{view_cfg.view_name}  {local_now_str()}"
-                line2 = (
-                    f"detectado={strongest[4]}  conf={strongest[5]:.2f}"
-                    if strongest else f"estado={status_str}"
-                )
-                annotated = add_overlay(annotated, line1, line2)
-
-                if run_preview or detections:
-                    self.state.update_view_frame(view_cfg.view_id, view_frame, annotated, "online")
-
-                if strongest:
-                    self._maybe_alert(view_cfg, view_frame, annotated, detections, strongest)
-
-    # ── detección ────────────────────────────
-
-    def _detect_targets(self, view_id: str, frame) -> List[Tuple[int, int, int, int, str, float]]:
-        result = self.detector.infer(frame)
-        if result is None or result.boxes is None:
-            return []
-
-        roi = self.cfg.camera_rois.get(view_id)
-        detections: List[Tuple[int, int, int, int, str, float]] = []
-
-        for box in result.boxes:
-            cls_id = int(box.cls[0].item())
-            score  = float(box.conf[0].item())
-            if cls_id not in self.target_ids:
+            if not run_detect and not run_preview:
                 continue
-            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            # Si hay ROI, filtrar detecciones fuera de él
-            if roi:
-                rx1, ry1, rx2, ry2 = roi
-                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                if not (rx1 <= cx <= rx2 and ry1 <= cy <= ry2):
-                    continue
-            label = self.detector.names.get(cls_id, str(cls_id))
-            detections.append((x1, y1, x2, y2, label, score))
 
-        return detections
+            for view_cfg, view_frame in self._split_frame(frame):
+                if run_detect:
+                    try:
+                        self.infer_queue.put_nowait((view_cfg, view_frame))
+                    except queue.Full:
+                        pass
+
+                if run_preview:
+                    result = self.frame_pool.latest(timeout=0)
+                    if result is not None:
+                        vc, raw_fr, ann_fr, dets, strongest = result
+                        self.state.update_view_frame(vc.view_id, raw_fr, ann_fr, "online")
+                        if strongest:
+                            self._maybe_alert(vc, raw_fr, ann_fr, dets, strongest)
 
     # ── alerta ───────────────────────────────
 
@@ -778,13 +879,8 @@ class CameraWorker(threading.Thread):
         ts_utc   = utc_now_iso()
         ts_local = local_now_str()
 
-        prefix    = f"{ts_file}_{view_cfg.crop_label}"
-        raw_path  = self.camera_dir / f"{prefix}_raw.jpg"
-        ann_path  = self.camera_dir / f"{prefix}_alert.jpg"
-        meta_path = self.camera_dir / f"{prefix}.json"
-
-        raw_saved = save_jpg(raw_frame,       raw_path, self.cfg.jpeg_quality)
-        ann_saved = save_jpg(annotated_frame, ann_path, self.cfg.jpeg_quality)
+        raw_bytes = encode_jpg(raw_frame, self.cfg.jpeg_quality)
+        ann_bytes = encode_jpg(annotated_frame, self.cfg.jpeg_quality)
 
         metadata = {
             "camera":          self.camera.name,
@@ -796,29 +892,44 @@ class CameraWorker(threading.Thread):
             "confidence":      round(score, 4),
             "utc_timestamp":   ts_utc,
             "local_timestamp": ts_local,
-            "raw_path":        str(raw_path),
-            "alert_path":      str(ann_path),
             "bbox":            {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             "all_detections":  [
                 {"x1": dx1, "y1": dy1, "x2": dx2, "y2": dy2, "label": dl, "score": round(ds, 4)}
                 for dx1, dy1, dx2, dy2, dl, ds in detections
             ],
         }
-        meta_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
 
-        logging.info(
-            "ALERT | camera=%s view=%s label=%s score=%.3f raw=%s ann=%s",
-            self.camera.name, view_cfg.view_id, label, score, raw_saved, ann_saved,
-        )
+        prefix = f"{ts_file}_{view_cfg.crop_label}"
+        cam_dir = self.camera_dir
+        quality = self.cfg.jpeg_quality
 
-        # Ruta relativa para servir por web: camera/archivo.jpg
-        ann_rel = f"{self.camera.name}/{ann_path.name}"
-        raw_rel = f"{self.camera.name}/{raw_path.name}"
+        def _write_async():
+            rp = cam_dir / f"{prefix}_raw.jpg"
+            ap = cam_dir / f"{prefix}_alert.jpg"
+            mp = cam_dir / f"{prefix}.json"
+            ok_r = False
+            ok_a = False
+            if raw_bytes is not None:
+                rp.write_bytes(raw_bytes)
+                ok_r = True
+            if ann_bytes is not None:
+                ap.write_bytes(ann_bytes)
+                ok_a = True
+            mp.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+            logging.info(
+                "ALERT | camera=%s view=%s label=%s score=%.3f raw=%s ann=%s",
+                cam_dir.parent.name, prefix, label, score, ok_r, ok_a,
+            )
+
+        self.disk_pool.submit(_write_async)
+
+        ann_rel = f"{view_cfg.camera_name}/{prefix}_alert.jpg"
+        raw_rel = f"{view_cfg.camera_name}/{prefix}_raw.jpg"
 
         event = EventRecord(
             ts_utc=ts_utc,
             ts_local=ts_local,
-            camera_name=self.camera.name,
+            camera_name=view_cfg.camera_name,
             view_id=view_cfg.view_id,
             label=label,
             confidence=round(score, 4),
@@ -828,14 +939,14 @@ class CameraWorker(threading.Thread):
         self.state.add_event(event)
 
         caption = (
-            f"🐱 {label.capitalize()} detectado\n"
-            f"Cámara: {self.camera.name}\n"
+            f"\U0001f431 {label.capitalize()} detectado\n"
+            f"Cámara: {view_cfg.camera_name}\n"
             f"Vista: {view_cfg.crop_label}\n"
             f"Confianza: {score:.2f}\n"
             f"UTC: {ts_utc}"
         )
-        if ann_saved:
-            self.notifier.send_photo(ann_path, caption)
+        if ann_bytes is not None:
+            self.notifier.send_photo_bytes(ann_bytes, f"{prefix}_alert.jpg", caption)
 
 
 # ─────────────────────────────────────────────
@@ -1040,6 +1151,8 @@ def main() -> None:
         notifier.stop()
         for worker in workers:
             worker.join(timeout=5)
+        for worker in workers:
+            worker.disk_pool.shutdown(wait=False, cancel_futures=True)
         logging.info("Apagado completo.")
 
 
