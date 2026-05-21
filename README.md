@@ -1,4 +1,4 @@
-# CatFinder RTSP Monitor – v2
+# CatFinder RTSP Monitor – v2.1
 
 Sistema de vigilancia con detección de objetos YOLO sobre streams RTSP,
 alertas Telegram y panel web en tiempo real.
@@ -25,6 +25,18 @@ alertas Telegram y panel web en tiempo real.
 | **Backend** | Recuento de detecciones acumulado por vista |
 | **Infra** | `Dockerfile` incluido |
 | **Infra** | `catfinder.service` (systemd) incluido |
+
+### Novedades v2.1
+
+| Área | Mejora |
+|------|--------|
+| **Concurrencia** | Cada cámara tiene su propia instancia de YOLO — inferencias en paralelo |
+| **Concurrencia** | JPEG encoding fuera del lock de estado — menor contención entre cámaras y web |
+| **Seguridad** | Token de Telegram sanitizado en logs (`bot***XXXX`) |
+| **Seguridad** | `WEB_PASSWORD` opcional para autenticación Basic Auth en API/dashboard |
+| **Seguridad** | Verificación de permisos de escritura en `SAVE_DIR` al arrancar |
+| **Calidad** | Suite de **50 tests unitarios** vía pytest |
+| **Rendimiento** | `np.ascontiguousarray` en split de frames — evita copia innecesaria |
 
 ## Arquitectura
 
@@ -54,6 +66,13 @@ python src/main.py
 ```
 
 Abre `http://127.0.0.1:8080` en el navegador.
+
+## Tests
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
 
 ## Variables de entorno clave
 
@@ -89,17 +108,25 @@ TELEGRAM_CHAT_ID=...
 LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR
 ```
 
+### Web
+
+```env
+WEB_PASSWORD=           # opcional: Basic Auth (vacío = sin autenticación)
+```
+
 ## Endpoints API
 
 | Endpoint | Descripción |
 |----------|-------------|
-| `GET /` | Panel web |
+| `GET /` † | Panel web |
 | `GET /stream/<view_id>` | Stream MJPEG anotado |
 | `GET /stream/raw/<view_id>` | Stream MJPEG sin anotaciones *(nuevo)* |
-| `GET /api/status` | JSON completo de estado |
-| `GET /api/events?page=0&page_size=50` | Lista de eventos paginada *(nuevo)* |
+| `GET /api/status` † | JSON completo de estado |
+| `GET /api/events?page=0&page_size=50` † | Lista de eventos paginada *(nuevo)* |
 | `GET /captures/<path>` | Imagen de captura guardada *(nuevo)* |
 | `GET /health` | Health check |
+
+† Requiere Basic Auth si `WEB_PASSWORD` está configurada en `.env`.
 
 ## Docker
 
@@ -130,6 +157,7 @@ captures/
 
 ## Seguridad
 
-- Los tokens Telegram no aparecen en logs.
+- Los tokens Telegram se sanitizan automáticamente en logs (`bot***XXXX`).
+- Autenticación Basic Auth opcional vía `WEB_PASSWORD` en `.env`.
 - El endpoint `/captures/` valida que la ruta esté dentro de `SAVE_DIR` (no path traversal).
 - Para exponer al exterior usa un reverse proxy (Nginx/Caddy) con autenticación básica.
