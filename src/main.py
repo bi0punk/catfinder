@@ -36,12 +36,13 @@ import signal
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Tuple
 
 import cv2
+import numpy as np
 import requests
 # [B1 FIX] request importado al nivel del módulo, no dentro de cada función.
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
@@ -96,6 +97,7 @@ class AppConfig:
     max_events: int
     stream_sleep_ms: int
     camera_rois: Dict[str, Tuple[int, int, int, int]]   # view_id -> (x1,y1,x2,y2)
+    web_password: str = ""                               # vacío = sin autenticación
 
 
 @dataclass
@@ -289,6 +291,7 @@ def load_config() -> AppConfig:
         web_title=os.getenv("WEB_TITLE", "CatFinder RTSP Monitor").strip(),
         max_events=int(os.getenv("MAX_EVENTS", "50")),
         stream_sleep_ms=int(os.getenv("STREAM_SLEEP_MS", "60")),
+        web_password=os.getenv("WEB_PASSWORD", "").strip(),
         camera_rois=camera_rois,
     )
 
@@ -414,13 +417,15 @@ class TelegramNotifier:
                     data={"chat_id": self.chat_id, "caption": caption},
                     files={"photo": f},
                     timeout=self.timeout_seconds,
+                    headers={"User-Agent": "CatFinder/2.1"},
                 )
             if response.ok:
                 logging.info("Telegram OK -> %s", image_path.name)
             else:
                 logging.error("Telegram FAIL status=%s body=%s", response.status_code, response.text[:200])
         except Exception as exc:
-            logging.exception("Telegram exception enviando %s: %s", image_path, exc)
+            sanitized = f"https://api.telegram.org/bot***{self.bot_token[-4:]}" if self.bot_token else ""
+            logging.error("Telegram exception enviando %s (url=%s): %s", image_path.name, sanitized, exc)
 
     def send_photo(self, image_path: Path, caption: str) -> None:
         if not self.enabled:
@@ -446,7 +451,6 @@ class DetectionEngine:
         self.model = YOLO(model_path)
         self.confidence_threshold = confidence_threshold
         self.infer_imgsz = infer_imgsz
-        self.lock = threading.Lock()
         self.names = self._normalize_names(self.model.names)
         logging.info("Modelo cargado: %s | clases disponibles: %s", model_path, len(self.names))
 
@@ -468,14 +472,13 @@ class DetectionEngine:
         return ids
 
     def infer(self, frame):
-        with self.lock:
-            results = self.model.predict(
-                source=frame,
-                conf=self.confidence_threshold,
-                imgsz=self.infer_imgsz,
-                verbose=False,
-                stream=False,
-            )
+        results = self.model.predict(
+            source=frame,
+            conf=self.confidence_threshold,
+            imgsz=self.infer_imgsz,
+            verbose=False,
+            stream=False,
+        )
         return results[0] if results else None
 
 
@@ -503,10 +506,10 @@ class AppState:
 
     # [B3 FIX] Usa self.jpeg_quality en lugar del valor hardcodeado 85.
     def update_view_frame(self, view_id: str, raw_frame, annotated_frame, status: str) -> None:
+        raw_jpg = encode_jpg(raw_frame, quality=self.jpeg_quality)
+        ann_jpg = encode_jpg(annotated_frame, quality=self.jpeg_quality)
         with self.lock:
             view = self.views[view_id]
-            raw_jpg = encode_jpg(raw_frame, quality=self.jpeg_quality)
-            ann_jpg = encode_jpg(annotated_frame, quality=self.jpeg_quality)
             if raw_jpg:
                 view.latest_raw_jpeg = raw_jpg
             if ann_jpg:
@@ -654,30 +657,30 @@ class CameraWorker(threading.Thread):
             cap.release()
             return None
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+        self.frame_count = 0
         self.state.update_view_status(self.camera.name, "online")
         return cap
 
     # ── split ────────────────────────────────
 
     def _split_frame(self, frame) -> List[Tuple[ViewConfig, object]]:
-        """Divide el frame según el modo de split y devuelve pares (ViewConfig, sub-frame)."""
         h, w = frame.shape[:2]
         ratio = self.camera.split_ratio
 
         if self.camera.split_mode == "vertical":
             cut = max(1, min(w - 1, int(w * ratio)))
             pairs = [
-                (self.view_configs.get(f"{self.camera.name}__left"),  frame[:, :cut].copy()),
-                (self.view_configs.get(f"{self.camera.name}__right"), frame[:, cut:].copy()),
+                (self.view_configs.get(f"{self.camera.name}__left"),  np.ascontiguousarray(frame[:, :cut])),
+                (self.view_configs.get(f"{self.camera.name}__right"), np.ascontiguousarray(frame[:, cut:])),
             ]
         elif self.camera.split_mode == "horizontal":
             cut = max(1, min(h - 1, int(h * ratio)))
             pairs = [
-                (self.view_configs.get(f"{self.camera.name}__top"),    frame[:cut, :].copy()),
-                (self.view_configs.get(f"{self.camera.name}__bottom"), frame[cut:, :].copy()),
+                (self.view_configs.get(f"{self.camera.name}__top"),    np.ascontiguousarray(frame[:cut, :])),
+                (self.view_configs.get(f"{self.camera.name}__bottom"), np.ascontiguousarray(frame[cut:, :])),
             ]
         else:
-            pairs = [(self.view_configs.get(f"{self.camera.name}__full"), frame.copy())]
+            pairs = [(self.view_configs.get(f"{self.camera.name}__full"), np.ascontiguousarray(frame))]
 
         return [(vc, fr) for vc, fr in pairs if vc is not None]
 
@@ -843,9 +846,24 @@ class CameraWorker(threading.Thread):
 def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event) -> Flask:
     app = Flask(__name__, template_folder="templates")
 
+    if cfg.web_password:
+        from functools import wraps
+        def require_auth(f):
+            @wraps(f)
+            def decorated(*args, **kwargs):
+                auth = request.authorization
+                if not auth or auth.password != cfg.web_password:
+                    return Response("Unauthorized", 401, {"WWW-Authenticate": 'Basic realm="CatFinder"'})
+                return f(*args, **kwargs)
+            return decorated
+    else:
+        def require_auth(f):
+            return f
+
     # ── Página principal ──────────────────────
 
     @app.route("/")
+    @require_auth
     def index():
         snap = state.snapshot()
         return render_template(
@@ -890,11 +908,13 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
     # ── API ───────────────────────────────────
 
     @app.route("/api/status")
+    @require_auth
     def api_status():
         return jsonify(state.snapshot())
 
     # [B1 FIX] request ya está importado al nivel del módulo.
     @app.route("/api/events")
+    @require_auth
     def api_events():
         try:
             page      = max(0, int(request.args.get("page", 0)))
@@ -947,6 +967,9 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
 def main() -> None:
     cfg = load_config()
     ensure_dir(cfg.save_dir)
+    if not os.access(cfg.save_dir, os.W_OK):
+        logging.error("save_dir %s no tiene permisos de escritura", cfg.save_dir)
+        raise SystemExit(1)
 
     logging.info(
         "Iniciando CatFinder | cámaras=%s | clases=%s | modelo=%s | web=%s:%s | telegram=%s",
@@ -960,13 +983,7 @@ def main() -> None:
     # [B3 FIX] jpeg_quality pasado explícitamente a AppState.
     state = AppState(views=views, max_events=cfg.max_events, jpeg_quality=cfg.jpeg_quality)
 
-    detector = DetectionEngine(
-        model_path=cfg.model_path,
-        confidence_threshold=cfg.confidence_threshold,
-        infer_imgsz=cfg.infer_imgsz,
-    )
-    target_ids = detector.resolve_target_ids(cfg.target_classes)
-    logging.info("IDs de clases objetivo -> %s", target_ids)
+    logging.info("IDs de clases objetivo -> %s", cfg.target_classes)
 
     notifier = TelegramNotifier(
         enabled=cfg.telegram_enabled,
@@ -992,8 +1009,15 @@ def main() -> None:
     signal.signal(signal.SIGINT,  shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    workers = [
-        CameraWorker(
+    workers = []
+    for camera in cfg.cameras:
+        detector = DetectionEngine(
+            model_path=cfg.model_path,
+            confidence_threshold=cfg.confidence_threshold,
+            infer_imgsz=cfg.infer_imgsz,
+        )
+        target_ids = detector.resolve_target_ids(cfg.target_classes)
+        workers.append(CameraWorker(
             camera=camera,
             view_configs=views,
             cfg=cfg,
@@ -1002,9 +1026,7 @@ def main() -> None:
             target_ids=target_ids,
             state=state,
             stop_event=stop_event,
-        )
-        for camera in cfg.cameras
-    ]
+        ))
 
     for worker in workers:
         worker.start()
