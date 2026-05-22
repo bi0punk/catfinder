@@ -1,0 +1,12 @@
+.git/
+.gitignore
+.venv/
+.env
+example.env
+catfinder.service
+README.md
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+captures/
