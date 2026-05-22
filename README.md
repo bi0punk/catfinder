@@ -70,7 +70,7 @@ Abre `http://127.0.0.1:8080` en el navegador.
 ## Tests
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
@@ -119,16 +119,26 @@ WEB_PASSWORD=           # opcional: Basic Auth (vacío = sin autenticación)
 | Endpoint | Descripción |
 |----------|-------------|
 | `GET /` † | Panel web |
-| `GET /stream/<view_id>` | Stream MJPEG anotado |
-| `GET /stream/raw/<view_id>` | Stream MJPEG sin anotaciones *(nuevo)* |
+| `GET /stream/<view_id>` † | Stream MJPEG anotado |
+| `GET /stream/raw/<view_id>` † | Stream MJPEG sin anotaciones *(nuevo)* |
 | `GET /api/status` † | JSON completo de estado |
 | `GET /api/events?page=0&page_size=50` † | Lista de eventos paginada *(nuevo)* |
-| `GET /captures/<path>` | Imagen de captura guardada *(nuevo)* |
+| `GET /captures/<path>` † | Imagen de captura guardada *(nuevo)* |
 | `GET /health` | Health check |
 
 † Requiere Basic Auth si `WEB_PASSWORD` está configurada en `.env`.
 
 ## Docker
+
+### docker compose (recomendado)
+
+```bash
+cp example.env .env
+# edita .env con tus cámaras y tokens
+docker compose up --build
+```
+
+### docker run
 
 ```bash
 docker build -t catfinder .
