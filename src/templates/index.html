@@ -308,7 +308,8 @@
                      class="thumb-btn"
                      width="48" height="36"
                      style="object-fit:cover"
-                     onclick="openModal('/captures/{{ event.alert_image }}','{{ event.ts_local }} – {{ event.camera_name }}')"
+                     data-img="/captures/{{ event.alert_image }}"
+                     data-title="{{ event.ts_local }} – {{ event.camera_name }}"
                      onerror="this.style.opacity='.2'"
                      alt="alerta">
               </td>
@@ -539,6 +540,14 @@ function openModal(src, title) {
   document.getElementById('imgModalDownload').href      = src;
   imgModal.show();
 }
+
+// Delegated click para imágenes de eventos renderizadas por Jinja
+document.getElementById('events-tbody').addEventListener('click', (e) => {
+  const img = e.target.closest('.thumb-btn[data-img]');
+  if (img) {
+    openModal(img.dataset.img, img.dataset.title);
+  }
+});
 
 // ─── Raw / annotated toggle ───────────────────────
 function toggleRaw(viewId, btn) {

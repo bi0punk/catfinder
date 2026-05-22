@@ -170,6 +170,23 @@ def safe_float(value: str, default: float) -> float:
         return default
 
 
+def redact_url(url: str) -> str:
+    try:
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(url)
+        if parsed.password:
+            replaced = parsed._replace(netloc=f"{parsed.username}:***@{parsed.hostname}" + (f":{parsed.port}" if parsed.port else ""))
+            return urlunparse(replaced)
+    except Exception:
+        pass
+    return url
+
+def safe_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
 def clamp_ratio(value: float) -> float:
     return min(0.9, max(0.1, value))
 
@@ -277,21 +294,21 @@ def load_config() -> AppConfig:
         telegram_chat_id=telegram_chat_id,
         model_path=os.getenv("MODEL_PATH", "yolo11n.pt").strip(),
         target_classes=target_classes,
-        confidence_threshold=float(os.getenv("CONFIDENCE_THRESHOLD", "0.55")),
-        cooldown_seconds=int(os.getenv("COOLDOWN_SECONDS", "60")),
-        process_every_n_frames=max(1, int(os.getenv("PROCESS_EVERY_N_FRAMES", "5"))),
-        preview_every_n_frames=max(1, int(os.getenv("PREVIEW_EVERY_N_FRAMES", "2"))),
+        confidence_threshold=safe_float(os.getenv("CONFIDENCE_THRESHOLD", "0.55"), 0.55),
+        cooldown_seconds=safe_int(os.getenv("COOLDOWN_SECONDS", "60"), 60),
+        process_every_n_frames=max(1, safe_int(os.getenv("PROCESS_EVERY_N_FRAMES", "5"), 5)),
+        preview_every_n_frames=max(1, safe_int(os.getenv("PREVIEW_EVERY_N_FRAMES", "2"), 2)),
         save_dir=Path(os.getenv("SAVE_DIR", "captures")).resolve(),
-        reconnect_delay_seconds=int(os.getenv("RECONNECT_DELAY_SECONDS", "5")),
-        jpeg_quality=int(os.getenv("JPEG_QUALITY", "85")),
-        infer_imgsz=int(os.getenv("INFER_IMGSZ", "960")),
-        request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+        reconnect_delay_seconds=safe_int(os.getenv("RECONNECT_DELAY_SECONDS", "5"), 5),
+        jpeg_quality=safe_int(os.getenv("JPEG_QUALITY", "85"), 85),
+        infer_imgsz=safe_int(os.getenv("INFER_IMGSZ", "960"), 960),
+        request_timeout_seconds=safe_int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20"), 20),
         draw_boxes=os.getenv("DRAW_BOXES", "true").strip().lower() in {"1", "true", "yes", "y"},
         web_host=os.getenv("WEB_HOST", "0.0.0.0").strip(),
-        web_port=int(os.getenv("WEB_PORT", "8080")),
+        web_port=safe_int(os.getenv("WEB_PORT", "8080"), 8080),
         web_title=os.getenv("WEB_TITLE", "CatFinder RTSP Monitor").strip(),
-        max_events=int(os.getenv("MAX_EVENTS", "50")),
-        stream_sleep_ms=int(os.getenv("STREAM_SLEEP_MS", "60")),
+        max_events=safe_int(os.getenv("MAX_EVENTS", "50"), 50),
+        stream_sleep_ms=safe_int(os.getenv("STREAM_SLEEP_MS", "60"), 60),
         web_password=os.getenv("WEB_PASSWORD", "").strip(),
         camera_rois=camera_rois,
     )
@@ -784,7 +801,7 @@ class CameraWorker(threading.Thread):
                 time.sleep(self.cfg.reconnect_delay_seconds)
 
     def _open_stream(self):
-        logging.info("Abriendo stream RTSP -> %s", self.camera.rtsp_url)
+        logging.info("Abriendo stream RTSP -> %s", redact_url(self.camera.rtsp_url))
         cap = cv2.VideoCapture(self.camera.rtsp_url, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             logging.error("No se pudo abrir el stream RTSP de %s", self.camera.name)
@@ -995,12 +1012,14 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
             time.sleep(sleep_s)
 
     @app.route("/stream/<view_id>")
+    @require_auth
     def stream_annotated(view_id: str):
         if view_id not in state.views:
             abort(404)
         return Response(_mjpeg_generator(view_id, annotated=True), mimetype="multipart/x-mixed-replace; boundary=frame")
 
     @app.route("/stream/raw/<view_id>")
+    @require_auth
     def stream_raw(view_id: str):
         if view_id not in state.views:
             abort(404)
@@ -1046,6 +1065,7 @@ def create_web_app(cfg: AppConfig, state: AppState, stop_event: threading.Event)
     # ── Imágenes guardadas ────────────────────
 
     @app.route("/captures/<path:filepath>")
+    @require_auth
     def serve_capture(filepath: str):
         # Seguridad: resolvemos y verificamos que esté dentro de save_dir
         target = (cfg.save_dir / filepath).resolve()
@@ -1099,7 +1119,7 @@ def main() -> None:
 
     # [B9 FIX] make_server permite llamar server.shutdown() desde el signal handler,
     # parando Flask limpiamente sin depender de KeyboardInterrupt.
-    server = make_server(cfg.web_host, cfg.web_port, app)
+    server = make_server(cfg.web_host, cfg.web_port, app, threaded=True)
     server.timeout = 1  # permite que serve_forever() compruebe el stop_event periódicamente
 
     def shutdown_handler(signum, frame):
