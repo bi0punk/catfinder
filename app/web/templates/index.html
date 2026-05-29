@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #0b1220; color: #e5e7eb; }
+    header { padding: 18px 24px; background: #111827; border-bottom: 1px solid #263244; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    h1 { font-size: 20px; margin: 0; }
+    main { padding: 22px; display: grid; gap: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+    .card { background: #111827; border: 1px solid #263244; border-radius: 14px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
+    .card h2 { margin: 0 0 12px; font-size: 16px; color: #f9fafb; }
+    .muted { color: #9ca3af; }
+    .status { display: inline-block; padding: 4px 9px; border-radius: 999px; font-size: 12px; background: #374151; }
+    .status.online { background: #065f46; color: #d1fae5; }
+    .status.reconnecting, .status.degraded { background: #92400e; color: #ffedd5; }
+    .status.offline, .status.stopped, .status.disabled { background: #7f1d1d; color: #fee2e2; }
+    button { background: #2563eb; color: white; border: 0; border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 600; }
+    button.secondary { background: #374151; }
+    button.danger { background: #b91c1c; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    input, select { width: 100%; box-sizing: border-box; background: #0b1220; color: #e5e7eb; border: 1px solid #374151; border-radius: 10px; padding: 10px; margin: 5px 0 10px; }
+    label { font-size: 13px; color: #cbd5e1; }
+    img.stream { width: 100%; border-radius: 12px; border: 1px solid #263244; background: #030712; min-height: 180px; object-fit: contain; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #263244; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }
+    th { color: #cbd5e1; }
+    code { color: #93c5fd; }
+    .row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .logs { max-height: 300px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; background: #030712; padding: 12px; border-radius: 10px; }
+    a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>{{ title }}</h1>
+    <div class="muted">Detección de gatos por RTSP + evidencia + Telegram</div>
+  </div>
+  <button onclick="refreshAll()">Actualizar</button>
+</header>
+<main>
+  <section class="grid">
+    <div class="card">
+      <h2>Estado</h2>
+      <div id="summary" class="muted">Cargando...</div>
+    </div>
+    <div class="card">
+      <h2>Agregar cámara</h2>
+      <label>Nombre</label>
+      <input id="camName" placeholder="patio">
+      <label>RTSP URL</label>
+      <input id="camUrl" placeholder="rtsp://usuario:password@ip:554/Streaming/Channels/102">
+      <label>Habilitada</label>
+      <select id="camEnabled"><option value="true">Sí</option><option value="false">No</option></select>
+      <button onclick="addCamera()">Agregar</button>
+      <div id="formMsg" class="muted"></div>
+    </div>
+    <div class="card">
+      <h2>Telegram</h2>
+      <p class="muted">La configuración se lee desde <code>.env</code>. Este botón solo prueba el envío.</p>
+      <button onclick="testTelegram()">Probar Telegram</button>
+      <div id="telegramMsg" class="muted"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Cámaras</h2>
+    <div id="cameras" class="grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>Eventos recientes</h2>
+    <table>
+      <thead><tr><th>Fecha</th><th>Cámara</th><th>Clase</th><th>Confianza</th><th>Imagen</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Logs</h2>
+    <div id="logs" class="logs">Cargando...</div>
+  </section>
+</main>
+<script>
+async function api(path, options={}) {
+  const res = await fetch(path, Object.assign({headers: {'Content-Type':'application/json'}}, options));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+  return data;
+}
+
+function statusClass(s) { return 'status ' + (s || '').toLowerCase(); }
+
+async function refreshStatus() {
+  const data = await api('/api/status');
+  document.getElementById('summary').innerHTML = `
+    <div>Cámaras: <b>${data.online_cameras}/${data.total_cameras}</b> online</div>
+    <div>Eventos en memoria: <b>${data.total_events_memory}</b></div>
+    <div>YOLO cargado: <b>${data.detector.loaded}</b></div>
+    <div>Telegram: <b>${data.telegram.enabled ? 'habilitado' : 'deshabilitado'}</b>, enviados: <b>${data.telegram.sent_count}</b>, fallidos: <b>${data.telegram.failed_count}</b></div>
+  `;
+  renderCameras(data.cameras || []);
+  renderEvents(data.events || []);
+}
+
+function renderCameras(cameras) {
+  const root = document.getElementById('cameras');
+  if (!cameras.length) { root.innerHTML = '<p class="muted">No hay cámaras activas. Agrega una desde el formulario o edita config/cameras.yaml.</p>'; return; }
+  root.innerHTML = cameras.map(cam => `
+    <div class="card">
+      <h2>${cam.name} <span class="${statusClass(cam.status)}">${cam.status}</span></h2>
+      <img class="stream" src="/stream/${cam.name}" onerror="this.alt='sin stream';">
+      <p class="muted">Último frame: ${cam.last_frame_at}</p>
+      <p class="muted">Última detección: ${cam.last_detection_label} ${cam.last_detection_confidence || ''} | ${cam.last_detection_at}</p>
+      <p class="muted">Frames: ${cam.frame_count} | Detecciones: ${cam.detection_count} | Reintentos: ${cam.reconnect_count}</p>
+      ${cam.last_error ? `<p class="muted">Error: ${cam.last_error}</p>` : ''}
+      <div class="row-actions">
+        <button class="secondary" onclick="restartCamera('${cam.name}')">Reiniciar</button>
+        <button class="danger" onclick="deleteCamera('${cam.name}')">Eliminar</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderEvents(events) {
+  const body = document.getElementById('events');
+  if (!events.length) { body.innerHTML = '<tr><td colspan="5" class="muted">Sin eventos todavía.</td></tr>'; return; }
+  body.innerHTML = events.slice(0, 50).map(ev => `
+    <tr>
+      <td>${ev.ts_local}</td><td>${ev.camera_name}</td><td>${ev.label}</td><td>${Number(ev.confidence).toFixed(2)}</td>
+      <td><a href="/captures/${ev.image_path}" target="_blank">ver</a></td>
+    </tr>
+  `).join('');
+}
+
+async function refreshLogs() {
+  const data = await api('/api/logs?limit=80');
+  document.getElementById('logs').textContent = (data.logs || []).map(l => `[${l.level}] ${l.ts} | ${l.thread} | ${l.message}`).join('\n');
+}
+
+async function addCamera() {
+  const msg = document.getElementById('formMsg');
+  msg.textContent = 'Agregando...';
+  try {
+    await api('/api/cameras', {method:'POST', body: JSON.stringify({name: camName.value, rtsp_url: camUrl.value, enabled: camEnabled.value})});
+    msg.textContent = 'Cámara agregada.';
+    camName.value = ''; camUrl.value = '';
+    refreshAll();
+  } catch (e) { msg.textContent = 'Error: ' + e.message; }
+}
+
+async function restartCamera(name) {
+  await api(`/api/cameras/${name}/restart`, {method:'POST'});
+  refreshAll();
+}
+
+async function deleteCamera(name) {
+  if (!confirm('Eliminar cámara ' + name + '?')) return;
+  await api(`/api/cameras/${name}`, {method:'DELETE'});
+  refreshAll();
+}
+
+async function testTelegram() {
+  const el = document.getElementById('telegramMsg');
+  el.textContent = 'Probando...';
+  try {
+    const data = await api('/api/telegram/test', {method:'POST'});
+    el.textContent = data.message;
+  } catch (e) { el.textContent = 'Error: ' + e.message; }
+}
+
+async function refreshAll() {
+  try { await refreshStatus(); } catch(e) { document.getElementById('summary').textContent = 'Error: ' + e.message; }
+  try { await refreshLogs(); } catch(e) { document.getElementById('logs').textContent = 'Error: ' + e.message; }
+}
+
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+</body>
+</html>

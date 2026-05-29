@@ -1,173 +1,203 @@
-# CatFinder RTSP Monitor – v2.1
+# CatFinder MVP
 
-Sistema de vigilancia con detección de objetos YOLO sobre streams RTSP,
-alertas Telegram y panel web en tiempo real.
+Proyecto limpio para detectar gatos en cámaras RTSP, dibujar la detección, guardar evidencia y enviar foto por Telegram.
 
-## Qué hay de nuevo en v2
-
-| Área | Mejora |
-|------|--------|
-| **Telegram** | Asíncrono (cola no bloqueante) y completamente **opcional** |
-| **Frontend** | Auto-refresh cada 3 s sin recargar página |
-| **Frontend** | Tabla de eventos con thumbnails + modal de imagen |
-| **Frontend** | Toast de notificación en nuevas detecciones |
-| **Frontend** | Botón fullscreen por stream |
-| **Frontend** | Toggle anotado/crudo por vista |
-| **Frontend** | Barra de estadísticas global en tiempo real |
-| **Backend** | Nuevo endpoint `/stream/raw/<view_id>` |
-| **Backend** | Nuevo endpoint `/api/events?page=N&page_size=M` |
-| **Backend** | Nuevo endpoint `/captures/<path>` para servir imágenes |
-| **Backend** | Soporte de **ROI por vista** (`CAMERA_ROIS`) |
-| **Backend** | `LOG_LEVEL` configurable en `.env` |
-| **Backend** | `TELEGRAM_ENABLED` toggle explícito |
-| **Backend** | Puerto por defecto corregido a `8080` en código y `.env` |
-| **Backend** | `ViewConfig` reutilizado en lugar de recrearse por frame |
-| **Backend** | Recuento de detecciones acumulado por vista |
-| **Infra** | `Dockerfile` incluido |
-| **Infra** | `catfinder.service` (systemd) incluido |
-
-### Novedades v2.1
-
-| Área | Mejora |
-|------|--------|
-| **Concurrencia** | Cada cámara tiene su propia instancia de YOLO — inferencias en paralelo |
-| **Concurrencia** | JPEG encoding fuera del lock de estado — menor contención entre cámaras y web |
-| **Seguridad** | Token de Telegram sanitizado en logs (`bot***XXXX`) |
-| **Seguridad** | `WEB_PASSWORD` opcional para autenticación Basic Auth en API/dashboard |
-| **Seguridad** | Verificación de permisos de escritura en `SAVE_DIR` al arrancar |
-| **Calidad** | Suite de **50 tests unitarios** vía pytest |
-| **Rendimiento** | `np.ascontiguousarray` en split de frames — evita copia innecesaria |
-
-## Arquitectura
+Está diseñado en capas para poder crecer sin convertir el proyecto en un script monolítico:
 
 ```text
-RTSP camera
-  └─> OpenCV VideoCapture
-        └─> split opcional (none / vertical / horizontal)
-              ├─> vista 1  ─> YOLO inference ─> ROI filter
-              └─> vista 2  ─> YOLO inference ─> ROI filter
-                                   │
-                    ┌──────────────┼──────────────────┐
-                    ▼              ▼                   ▼
-              guardar JPG   Telegram (async)     Flask MJPEG
-              + JSON        notifier             + API + UI
+RTSP Camera
+  ↓
+CameraWorker / CameraManager
+  ↓
+YoloDetector
+  ↓
+Draw + EvidenceStore
+  ↓
+TelegramNotifier
+  ↓
+Flask Web/API
 ```
 
-## Instalación rápida
+## Qué hace
+
+1. Lee cámaras RTSP.
+2. Detecta gatos con YOLO/Ultralytics.
+3. Dibuja caja, etiqueta y fecha sobre el frame.
+4. Guarda evidencia en `captures/<camara>/`.
+5. Registra eventos en `captures/events.jsonl`.
+6. Envía la foto por Telegram si está habilitado.
+7. Permite gestionar cámaras desde API y panel web.
+8. Evita spam con `COOLDOWN_SECONDS`.
+
+## Estructura
+
+```text
+catfinder_mvp/
+├── app/
+│   ├── camera/          # workers RTSP y manager de cámaras
+│   ├── core/            # configuración, logging, utilidades
+│   ├── detection/       # YOLO + dibujo
+│   ├── domain/          # modelos de datos y estado
+│   ├── notifier/        # Telegram
+│   ├── storage/         # evidencias, events.jsonl, retención
+│   └── web/             # Flask, API y UI
+├── config/cameras.yaml
+├── captures/
+├── models/
+├── scripts/
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
+```
+
+## Instalación local en Linux
 
 ```bash
+unzip catfinder_mvp_YYYYMMDD_HHMMSS.zip
+cd catfinder_mvp_YYYYMMDD_HHMMSS
+cp .env.example .env
+mkdir -p models captures
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-cp example.env .env
-# edita .env
-python src/main.py
 ```
 
-Abre `http://127.0.0.1:8080` en el navegador.
-
-## Tests
+Descarga o copia el modelo:
 
 ```bash
-pip install -r requirements-dev.txt
-pytest tests/ -v
+# opción simple: Ultralytics puede descargarlo automáticamente si hay internet
+# o copia un yolo11n.pt ya descargado:
+cp /ruta/yolo11n.pt models/yolo11n.pt
 ```
 
-## Variables de entorno clave
+Configura la cámara en `config/cameras.yaml`:
 
-### Cámaras
-
-```env
-RTSP_URLS=patio=rtsp://usuario:clave@192.168.1.50:554/stream1
-CAMERA_SPLITS=patio=vertical       # none | vertical | horizontal
-CAMERA_SPLIT_RATIOS=patio=0.5
+```yaml
+cameras:
+  - name: patio
+    rtsp_url: rtsp://usuario:password@192.168.1.100:554/Streaming/Channels/102
+    enabled: true
+    detect_fps: null
+    cooldown_seconds: null
+    max_frame_width: null
 ```
 
-### ROI por vista (nuevo en v2)
-
-Filtra detecciones fuera del área definida. Las coordenadas son
-píxeles relativos a la vista (después del split).
-
-```env
-# Formato: viewid=x1:y1:x2:y2
-CAMERA_ROIS=patio__left=0:100:640:480,patio__right=50:0:620:480
-```
-
-### Telegram (ahora opcional)
-
-```env
-TELEGRAM_ENABLED=true   # false para deshabilitar sin errores
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-
-### Log
-
-```env
-LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR
-```
-
-### Web
-
-```env
-WEB_PASSWORD=           # opcional: Basic Auth (vacío = sin autenticación)
-```
-
-## Endpoints API
-
-| Endpoint | Descripción |
-|----------|-------------|
-| `GET /` † | Panel web |
-| `GET /stream/<view_id>` † | Stream MJPEG anotado |
-| `GET /stream/raw/<view_id>` † | Stream MJPEG sin anotaciones *(nuevo)* |
-| `GET /api/status` † | JSON completo de estado |
-| `GET /api/events?page=0&page_size=50` † | Lista de eventos paginada *(nuevo)* |
-| `GET /captures/<path>` † | Imagen de captura guardada *(nuevo)* |
-| `GET /health` | Health check |
-
-† Requiere Basic Auth si `WEB_PASSWORD` está configurada en `.env`.
-
-## Docker
-
-### docker compose (recomendado)
+Ejecuta:
 
 ```bash
-cp example.env .env
-# edita .env con tus cámaras y tokens
-docker compose up --build
+python -m app.main
 ```
 
-### docker run
-
-```bash
-docker build -t catfinder .
-docker run --env-file .env -p 8080:8080 -v $(pwd)/captures:/app/captures catfinder
-```
-
-## systemd
-
-```bash
-sudo cp catfinder.service /etc/systemd/system/
-# Edita User= y WorkingDirectory= en el archivo
-sudo systemctl daemon-reload
-sudo systemctl enable --now catfinder
-sudo journalctl -u catfinder -f
-```
-
-## Archivos generados
+Panel:
 
 ```text
-captures/
-  patio/
-    20260413_120010_left_raw.jpg
-    20260413_120010_left_alert.jpg
-    20260413_120010_left.json
+http://localhost:8080
 ```
 
-## Seguridad
+## Configuración Telegram
 
-- Los tokens Telegram se sanitizan automáticamente en logs (`bot***XXXX`).
-- Autenticación Basic Auth opcional vía `WEB_PASSWORD` en `.env`.
-- El endpoint `/captures/` valida que la ruta esté dentro de `SAVE_DIR` (no path traversal).
-- Para exponer al exterior usa un reverse proxy (Nginx/Caddy) con autenticación básica.
+Edita `.env`:
+
+```env
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=123456:ABCDEF
+TELEGRAM_CHAT_ID=123456789
+```
+
+Prueba:
+
+```bash
+source .venv/bin/activate
+python scripts/test_telegram.py
+```
+
+También puedes probar desde el panel web con el botón `Probar Telegram`.
+
+## Configuración recomendada CPU-only
+
+Para una máquina sin GPU:
+
+```env
+MODEL_PATH=models/yolo11n.pt
+TARGET_CLASSES=cat
+CONFIDENCE_THRESHOLD=0.45
+INFER_IMGSZ=416
+DETECT_FPS=1.0
+COOLDOWN_SECONDS=60
+MAX_FRAME_WIDTH=960
+JPEG_QUALITY=75
+OPENCV_THREADS=1
+OMP_NUM_THREADS=2
+MKL_NUM_THREADS=2
+TORCH_NUM_THREADS=2
+TORCH_INTEROP_THREADS=1
+```
+
+Si la CPU sube mucho:
+
+1. Baja `INFER_IMGSZ` a `320`.
+2. Baja `DETECT_FPS` a `0.5`.
+3. Usa substream RTSP, por ejemplo Hikvision/Ezviz `Streaming/Channels/102`.
+4. Mantén `MAX_FRAME_WIDTH=960` o menor.
+
+## API principal
+
+```text
+GET  /health
+GET  /ready
+GET  /api/status
+GET  /api/events
+GET  /api/logs
+GET  /api/cameras
+POST /api/cameras
+PUT  /api/cameras/<name>
+DELETE /api/cameras/<name>
+POST /api/cameras/<name>/restart
+GET  /stream/<name>
+GET  /captures/<path>
+POST /api/telegram/test
+```
+
+Agregar cámara por API:
+
+```bash
+curl -s -X POST http://localhost:8080/api/cameras \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name":"patio",
+    "rtsp_url":"rtsp://usuario:password@192.168.1.100:554/Streaming/Channels/102",
+    "enabled":true
+  }' | jq
+```
+
+## Docker Compose
+
+```bash
+cp .env.example .env
+mkdir -p models captures
+# cp /ruta/yolo11n.pt models/yolo11n.pt
+
+docker compose build
+docker compose up -d
+docker logs -f catfinder_mvp
+```
+
+## Seguridad mínima
+
+Activa contraseña para el panel:
+
+```env
+WEB_PASSWORD=clave_larga
+```
+
+No expongas RTSP ni el panel directo a internet. Usa VPN/Tailscale o reverse proxy con HTTPS.
+
+## Próximas mejoras naturales
+
+1. ROI por cámara para alertar solo en zonas.
+2. Horarios de vigilancia.
+3. Detección de otros objetos: perros, personas, autos.
+4. Base SQLite para eventos.
+5. Grabación de clips cortos antes/después de la detección.
+6. Prometheus/Grafana para monitoreo.

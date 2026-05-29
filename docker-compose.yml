@@ -1,22 +1,14 @@
 services:
-  app:
+  catfinder:
     build: .
-    container_name: catfinder
-    ports:
-      - "${WEB_PORT:-8080}:8080"
+    container_name: catfinder_mvp
+    restart: unless-stopped
     env_file:
       - .env
+    ports:
+      - "8080:8080"
     volumes:
+      - ./config:/app/config
       - ./captures:/app/captures
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - ./models:/app/models:ro
+    shm_size: "512mb"
