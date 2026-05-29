@@ -1,0 +1,7 @@
+cameras:
+- name: patio24
+  rtsp_url: rtsp://peww:ua3epk@192.168.1.21:554/live/ch00_0
+  enabled: true
+  detect_fps: null
+  cooldown_seconds: null
+  max_frame_width: null

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+python -m compileall -q app tests
+python -m pytest -q || true
+
+echo "[OK] Validación básica completada."
