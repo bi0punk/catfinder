@@ -10,20 +10,21 @@ class UILogHandler(logging.Handler):
         super().__init__()
         self._records: deque[dict] = deque(maxlen=maxlen)
         self._lock = RLock()
+        self._time_formatter = logging.Formatter(datefmt="%Y-%m-%d %H:%M:%S")
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             with self._lock:
                 self._records.appendleft(
                     {
-                        "ts": self.formatTime(record, "%Y-%m-%d %H:%M:%S"),
+                        "ts": self._time_formatter.formatTime(record, "%Y-%m-%d %H:%M:%S"),
                         "level": record.levelname,
                         "thread": record.threadName,
                         "message": record.getMessage(),
                     }
                 )
         except Exception:
-            pass
+            self.handleError(record)
 
     def records(self, limit: int = 100) -> list[dict]:
         with self._lock:
@@ -39,9 +40,10 @@ def setup_logging(level_name: str = "INFO") -> UILogHandler:
     root = logging.getLogger()
     root.setLevel(level)
 
-    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+    if not any(getattr(h, "_catfinder_console", False) for h in root.handlers):
         stream = logging.StreamHandler()
         stream.setFormatter(formatter)
+        stream._catfinder_console = True  # type: ignore[attr-defined]
         root.addHandler(stream)
 
     ui_handler = UILogHandler(maxlen=300)

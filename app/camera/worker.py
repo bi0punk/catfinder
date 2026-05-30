@@ -110,7 +110,7 @@ class CameraWorker(threading.Thread):
                 detections = self._detect_frame(frame)
                 if detections:
                     self._last_detections = detections
-                    self._last_detections_until = now + 1.5
+                    self._last_detections_until = now + self.cfg.box_persist_seconds
                     best = max(detections, key=lambda d: d.confidence)
                     self.runtime_state.mark_detection(best)
                     self._maybe_alert(frame, detections, now)
@@ -151,6 +151,7 @@ class CameraWorker(threading.Thread):
             caption = (
                 f"🐱 Gato detectado\n"
                 f"Cámara: {event.camera_name}\n"
+                f"Clase: {event.label}\n"
                 f"Confianza: {event.confidence:.2f}\n"
                 f"Fecha: {event.ts_local}"
             )

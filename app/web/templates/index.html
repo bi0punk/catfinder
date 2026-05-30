@@ -5,71 +5,137 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: #0b1220; color: #e5e7eb; }
-    header { padding: 18px 24px; background: #111827; border-bottom: 1px solid #263244; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-    h1 { font-size: 20px; margin: 0; }
-    main { padding: 22px; display: grid; gap: 20px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-    .card { background: #111827; border: 1px solid #263244; border-radius: 14px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
-    .card h2 { margin: 0 0 12px; font-size: 16px; color: #f9fafb; }
-    .muted { color: #9ca3af; }
-    .status { display: inline-block; padding: 4px 9px; border-radius: 999px; font-size: 12px; background: #374151; }
-    .status.online { background: #065f46; color: #d1fae5; }
-    .status.reconnecting, .status.degraded { background: #92400e; color: #ffedd5; }
-    .status.offline, .status.stopped, .status.disabled { background: #7f1d1d; color: #fee2e2; }
-    button { background: #2563eb; color: white; border: 0; border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 600; }
-    button.secondary { background: #374151; }
-    button.danger { background: #b91c1c; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    input, select { width: 100%; box-sizing: border-box; background: #0b1220; color: #e5e7eb; border: 1px solid #374151; border-radius: 10px; padding: 10px; margin: 5px 0 10px; }
-    label { font-size: 13px; color: #cbd5e1; }
-    img.stream { width: 100%; border-radius: 12px; border: 1px solid #263244; background: #030712; min-height: 180px; object-fit: contain; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #263244; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }
-    th { color: #cbd5e1; }
-    code { color: #93c5fd; }
-    .row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .logs { max-height: 300px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; background: #030712; padding: 12px; border-radius: 10px; }
-    a { color: #93c5fd; }
+    :root {
+      color-scheme: dark;
+      --bg:#07111f; --panel:#0e1a2b; --panel2:#111f33; --line:#243247;
+      --text:#e8eef7; --muted:#9fb0c5; --ok:#12b981; --warn:#f59e0b; --bad:#ef4444; --blue:#3b82f6;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background: radial-gradient(circle at top left, #12213a, var(--bg) 42%); color:var(--text); }
+    header { padding:22px 28px; border-bottom:1px solid var(--line); background:rgba(7,17,31,.88); backdrop-filter: blur(10px); position:sticky; top:0; z-index:5; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+    h1 { margin:0; font-size:22px; letter-spacing:.2px; }
+    .subtitle { color:var(--muted); margin-top:4px; font-size:14px; }
+    main { padding:24px; display:grid; gap:18px; max-width:1500px; margin:auto; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap:16px; }
+    .grid-wide { display:grid; grid-template-columns: 1.5fr .9fr; gap:16px; }
+    @media (max-width: 1100px) { .grid-wide { grid-template-columns:1fr; } }
+    .card { background:linear-gradient(180deg,var(--panel),var(--panel2)); border:1px solid var(--line); border-radius:18px; padding:17px; box-shadow:0 12px 42px rgba(0,0,0,.26); }
+    .card h2 { margin:0 0 12px; font-size:16px; }
+    .muted { color:var(--muted); }
+    .small { font-size:12px; }
+    .metric-row { display:grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap:12px; }
+    @media (max-width: 900px) { .metric-row { grid-template-columns: repeat(2, 1fr); } }
+    .metric { background:#081424; border:1px solid var(--line); border-radius:14px; padding:13px; }
+    .metric b { display:block; font-size:24px; margin-top:4px; }
+    .status { display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:700; background:#334155; color:#e2e8f0; }
+    .status.online { background:#064e3b; color:#d1fae5; }
+    .status.reconnecting, .status.degraded { background:#78350f; color:#ffedd5; }
+    .status.offline, .status.stopped, .status.disabled { background:#7f1d1d; color:#fee2e2; }
+    button { background:var(--blue); color:white; border:0; border-radius:11px; padding:9px 13px; cursor:pointer; font-weight:700; }
+    button.secondary { background:#334155; }
+    button.danger { background:#b91c1c; }
+    button.ghost { background:transparent; border:1px solid var(--line); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    label { display:block; color:#cbd5e1; font-size:12px; margin:7px 0 5px; }
+    input, select { width:100%; background:#07111f; color:var(--text); border:1px solid #34465f; border-radius:11px; padding:10px; outline:none; }
+    input:focus, select:focus { border-color:var(--blue); }
+    .form-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+    @media (max-width: 760px) { .form-grid { grid-template-columns:1fr; } }
+    img.stream { width:100%; border-radius:14px; border:1px solid var(--line); background:#020617; min-height:210px; object-fit:contain; }
+    img.preview { width:100%; max-height:420px; object-fit:contain; border-radius:14px; border:1px solid var(--line); background:#020617; }
+    .camera-title { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+    .camera-title h3 { margin:0; font-size:16px; }
+    .row-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { border-bottom:1px solid var(--line); padding:9px 7px; text-align:left; font-size:13px; vertical-align:top; }
+    th { color:#cbd5e1; }
+    code { color:#93c5fd; }
+    .logs { max-height:310px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap; background:#020617; padding:12px; border-radius:12px; border:1px solid var(--line); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border:1px solid var(--line); border-radius:999px; color:#cbd5e1; font-size:12px; background:#081424; }
+    a { color:#93c5fd; }
+    .hint { border-left:3px solid var(--warn); padding:10px 12px; background:#1f1605; border-radius:10px; color:#fde68a; }
   </style>
 </head>
 <body>
 <header>
-  <div>
-    <h1>{{ title }}</h1>
-    <div class="muted">Detección de gatos por RTSP + evidencia + Telegram</div>
+  <div class="topbar">
+    <div>
+      <h1>{{ title }}</h1>
+      <div class="subtitle">Panel RTSP para detección de gatos con YOLO, cajas visibles, evidencias y diagnóstico.</div>
+    </div>
+    <div class="row-actions"><button onclick="refreshAll()">Actualizar</button></div>
   </div>
-  <button onclick="refreshAll()">Actualizar</button>
 </header>
 <main>
-  <section class="grid">
-    <div class="card">
-      <h2>Estado</h2>
-      <div id="summary" class="muted">Cargando...</div>
-    </div>
-    <div class="card">
-      <h2>Agregar cámara</h2>
-      <label>Nombre</label>
-      <input id="camName" placeholder="patio">
-      <label>RTSP URL</label>
-      <input id="camUrl" placeholder="rtsp://usuario:password@ip:554/Streaming/Channels/102">
-      <label>Habilitada</label>
-      <select id="camEnabled"><option value="true">Sí</option><option value="false">No</option></select>
-      <button onclick="addCamera()">Agregar</button>
-      <div id="formMsg" class="muted"></div>
-    </div>
-    <div class="card">
-      <h2>Telegram</h2>
-      <p class="muted">La configuración se lee desde <code>.env</code>. Este botón solo prueba el envío.</p>
-      <button onclick="testTelegram()">Probar Telegram</button>
-      <div id="telegramMsg" class="muted"></div>
-    </div>
+  <section class="metric-row" id="metrics">
+    <div class="metric"><span class="muted">Cámaras online</span><b id="mCameras">-</b></div>
+    <div class="metric"><span class="muted">Eventos</span><b id="mEvents">-</b></div>
+    <div class="metric"><span class="muted">YOLO</span><b id="mYolo">-</b></div>
+    <div class="metric"><span class="muted">Última inferencia</span><b id="mInfer">-</b></div>
   </section>
 
-  <section class="card">
-    <h2>Cámaras</h2>
-    <div id="cameras" class="grid"></div>
+  <section class="grid-wide">
+    <div class="card">
+      <h2>Cámaras en vivo</h2>
+      <div class="hint small">Para gatos reales se dejó el perfil más sensible: confianza inicial 0.25, imagen 640 y cajas persistentes. Si aparecen falsos positivos, sube la confianza a 0.35.</div>
+      <div id="cameras" class="grid" style="margin-top:14px"></div>
+    </div>
+
+    <aside class="card">
+      <h2>Ajustes de detección</h2>
+      <div class="form-grid">
+        <div><label>Clases objetivo</label><input id="targetClasses" value="cat" placeholder="cat"></div>
+        <div><label>Confianza</label><input id="conf" type="number" step="0.01" min="0.01" max="0.99"></div>
+        <div><label>Tamaño inferencia</label><input id="imgsz" type="number" min="256" max="1536"></div>
+        <div><label>Detect FPS</label><input id="detectFps" type="number" step="0.1" min="0.1" max="10"></div>
+        <div><label>Persistencia caja seg.</label><input id="persist" type="number" step="0.1" min="0" max="10"></div>
+        <div><label>Dibujar cajas</label><select id="drawBoxes"><option value="true">Sí</option><option value="false">No</option></select></div>
+      </div>
+      <div class="row-actions"><button onclick="saveDetectionSettings()">Guardar ajustes</button><button class="secondary" onclick="loadClasses()">Ver clases modelo</button></div>
+      <div id="settingsMsg" class="muted small" style="margin-top:8px"></div>
+      <div id="classList" class="logs" style="display:none; margin-top:10px; max-height:160px"></div>
+    </aside>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Agregar cámara</h2>
+      <div class="form-grid">
+        <div><label>Nombre</label><input id="camName" placeholder="patio"></div>
+        <div><label>Habilitada</label><select id="camEnabled"><option value="true">Sí</option><option value="false">No</option></select></div>
+      </div>
+      <label>RTSP URL</label>
+      <input id="camUrl" placeholder="rtsp://usuario:password@ip:554/Streaming/Channels/102">
+      <div class="form-grid">
+        <div><label>Detect FPS opcional</label><input id="camDetectFps" type="number" step="0.1" placeholder="vacío = global"></div>
+        <div><label>Ancho máximo opcional</label><input id="camMaxWidth" type="number" placeholder="vacío = global"></div>
+      </div>
+      <button onclick="addCamera()">Agregar cámara</button>
+      <div id="formMsg" class="muted small" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Diagnóstico con imagen</h2>
+      <p class="muted small">Sube una foto/frame donde aparezca el gato. Esto ejecuta YOLO y devuelve una imagen anotada para validar si el problema es cámara, umbral o modelo.</p>
+      <input id="testImage" type="file" accept="image/*">
+      <div class="form-grid">
+        <div><label>Conf prueba</label><input id="testConf" type="number" step="0.01" value="0.20"></div>
+        <div><label>imgsz prueba</label><input id="testImgsz" type="number" value="640"></div>
+      </div>
+      <label><input id="testAllClasses" type="checkbox" style="width:auto"> Probar todas las clases</label>
+      <button onclick="testImageDetection()">Probar detección</button>
+      <div id="testMsg" class="muted small" style="margin-top:8px"></div>
+      <div id="testResult" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Telegram</h2>
+      <p class="muted small">Se configura por <code>.env</code>. El botón solo valida envío.</p>
+      <button onclick="testTelegram()">Probar Telegram</button>
+      <div id="telegramMsg" class="muted small" style="margin-top:8px"></div>
+    </div>
   </section>
 
   <section class="card">
@@ -87,97 +153,135 @@
 </main>
 <script>
 async function api(path, options={}) {
-  const res = await fetch(path, Object.assign({headers: {'Content-Type':'application/json'}}, options));
+  const headers = options.body instanceof FormData ? {} : {'Content-Type':'application/json'};
+  const res = await fetch(path, Object.assign({headers}, options));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || data.message || res.statusText);
   return data;
 }
-
+const $ = (id) => document.getElementById(id);
 function statusClass(s) { return 'status ' + (s || '').toLowerCase(); }
+function fmt(v, empty='-') { return (v === undefined || v === null || v === '' || v === '-') ? empty : v; }
+function num(v, decimals=2) { const n = Number(v); return Number.isFinite(n) ? n.toFixed(decimals) : '-'; }
 
 async function refreshStatus() {
   const data = await api('/api/status');
-  document.getElementById('summary').innerHTML = `
-    <div>Cámaras: <b>${data.online_cameras}/${data.total_cameras}</b> online</div>
-    <div>Eventos en memoria: <b>${data.total_events_memory}</b></div>
-    <div>YOLO cargado: <b>${data.detector.loaded}</b></div>
-    <div>Telegram: <b>${data.telegram.enabled ? 'habilitado' : 'deshabilitado'}</b>, enviados: <b>${data.telegram.sent_count}</b>, fallidos: <b>${data.telegram.failed_count}</b></div>
-  `;
+  $('mCameras').textContent = `${data.online_cameras}/${data.total_cameras}`;
+  $('mEvents').textContent = data.total_events_memory;
+  $('mYolo').textContent = data.detector.loaded ? 'OK' : (data.detector.error ? 'ERROR' : 'PEND');
+  $('mInfer').textContent = data.detector.last_infer_ms ? `${data.detector.last_infer_ms} ms` : '-';
+  fillSettings(data.detector || {});
   renderCameras(data.cameras || []);
   renderEvents(data.events || []);
 }
 
+function fillSettings(det) {
+  $('targetClasses').value = (det.target_classes || ['cat']).join(',');
+  $('conf').value = det.confidence_threshold ?? 0.25;
+  $('imgsz').value = det.infer_imgsz ?? 640;
+  $('detectFps').value = det.detect_fps ?? 1.0;
+  $('persist').value = det.box_persist_seconds ?? 2.5;
+  $('drawBoxes').value = String(det.draw_boxes !== false);
+}
+
 function renderCameras(cameras) {
-  const root = document.getElementById('cameras');
-  if (!cameras.length) { root.innerHTML = '<p class="muted">No hay cámaras activas. Agrega una desde el formulario o edita config/cameras.yaml.</p>'; return; }
+  const root = $('cameras');
+  if (!cameras.length) { root.innerHTML = '<p class="muted">No hay cámaras activas. Agrega una cámara o edita config/cameras.yaml.</p>'; return; }
   root.innerHTML = cameras.map(cam => `
     <div class="card">
-      <h2>${cam.name} <span class="${statusClass(cam.status)}">${cam.status}</span></h2>
-      <img class="stream" src="/stream/${cam.name}" onerror="this.alt='sin stream';">
-      <p class="muted">Último frame: ${cam.last_frame_at}</p>
-      <p class="muted">Última detección: ${cam.last_detection_label} ${cam.last_detection_confidence || ''} | ${cam.last_detection_at}</p>
-      <p class="muted">Frames: ${cam.frame_count} | Detecciones: ${cam.detection_count} | Reintentos: ${cam.reconnect_count}</p>
-      ${cam.last_error ? `<p class="muted">Error: ${cam.last_error}</p>` : ''}
+      <div class="camera-title"><h3>${cam.name}</h3><span class="${statusClass(cam.status)}">${cam.status}</span></div>
+      <img class="stream" src="/stream/${cam.name}?t=${Date.now()}" onerror="this.alt='sin stream';">
+      <div class="row-actions small" style="margin-top:10px">
+        <span class="pill">Frames ${cam.frame_count}</span>
+        <span class="pill">Detecciones ${cam.detection_count}</span>
+        <span class="pill">Reintentos ${cam.reconnect_count}</span>
+      </div>
+      <p class="muted small">Último frame: ${fmt(cam.last_frame_at)}</p>
+      <p class="muted small">Última detección: ${fmt(cam.last_detection_label)} ${cam.last_detection_confidence ? num(cam.last_detection_confidence) : ''} | ${fmt(cam.last_detection_at)}</p>
+      ${cam.last_error ? `<p class="muted small">Error: ${cam.last_error}</p>` : ''}
       <div class="row-actions">
         <button class="secondary" onclick="restartCamera('${cam.name}')">Reiniciar</button>
         <button class="danger" onclick="deleteCamera('${cam.name}')">Eliminar</button>
       </div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 function renderEvents(events) {
-  const body = document.getElementById('events');
+  const body = $('events');
   if (!events.length) { body.innerHTML = '<tr><td colspan="5" class="muted">Sin eventos todavía.</td></tr>'; return; }
-  body.innerHTML = events.slice(0, 50).map(ev => `
-    <tr>
-      <td>${ev.ts_local}</td><td>${ev.camera_name}</td><td>${ev.label}</td><td>${Number(ev.confidence).toFixed(2)}</td>
-      <td><a href="/captures/${ev.image_path}" target="_blank">ver</a></td>
-    </tr>
-  `).join('');
+  body.innerHTML = events.slice(0, 60).map(ev => `
+    <tr><td>${ev.ts_local}</td><td>${ev.camera_name}</td><td>${ev.label}</td><td>${num(ev.confidence)}</td><td><a href="/captures/${ev.image_path}" target="_blank">ver evidencia</a></td></tr>`).join('');
 }
 
 async function refreshLogs() {
-  const data = await api('/api/logs?limit=80');
-  document.getElementById('logs').textContent = (data.logs || []).map(l => `[${l.level}] ${l.ts} | ${l.thread} | ${l.message}`).join('\n');
+  const data = await api('/api/logs?limit=120');
+  $('logs').textContent = (data.logs || []).map(l => `[${l.level}] ${l.ts} | ${l.thread} | ${l.message}`).join('\n') || 'Sin logs.';
+}
+
+async function saveDetectionSettings() {
+  const msg = $('settingsMsg'); msg.textContent = 'Guardando...';
+  try {
+    await api('/api/detection', {method:'PUT', body: JSON.stringify({
+      target_classes: $('targetClasses').value,
+      confidence_threshold: Number($('conf').value),
+      infer_imgsz: Number($('imgsz').value),
+      detect_fps: Number($('detectFps').value),
+      box_persist_seconds: Number($('persist').value),
+      draw_boxes: $('drawBoxes').value
+    })});
+    msg.textContent = 'Ajustes aplicados. Reinicia cámara solo si cambiaste fuente RTSP.';
+    refreshAll();
+  } catch(e) { msg.textContent = 'Error: ' + e.message; }
+}
+
+async function loadClasses() {
+  const box = $('classList'); box.style.display = 'block'; box.textContent = 'Cargando clases...';
+  try {
+    const data = await api('/api/detection/classes');
+    box.textContent = (data.classes || []).map(c => `${c.id}: ${c.label}`).join('\n');
+  } catch(e) { box.textContent = 'Error: ' + e.message; }
 }
 
 async function addCamera() {
-  const msg = document.getElementById('formMsg');
-  msg.textContent = 'Agregando...';
+  const msg = $('formMsg'); msg.textContent = 'Agregando...';
+  const payload = {name: $('camName').value, rtsp_url: $('camUrl').value, enabled: $('camEnabled').value};
+  if ($('camDetectFps').value) payload.detect_fps = Number($('camDetectFps').value);
+  if ($('camMaxWidth').value) payload.max_frame_width = Number($('camMaxWidth').value);
   try {
-    await api('/api/cameras', {method:'POST', body: JSON.stringify({name: camName.value, rtsp_url: camUrl.value, enabled: camEnabled.value})});
+    await api('/api/cameras', {method:'POST', body: JSON.stringify(payload)});
     msg.textContent = 'Cámara agregada.';
-    camName.value = ''; camUrl.value = '';
+    $('camName').value = ''; $('camUrl').value = ''; $('camDetectFps').value=''; $('camMaxWidth').value='';
     refreshAll();
-  } catch (e) { msg.textContent = 'Error: ' + e.message; }
+  } catch(e) { msg.textContent = 'Error: ' + e.message; }
 }
 
-async function restartCamera(name) {
-  await api(`/api/cameras/${name}/restart`, {method:'POST'});
-  refreshAll();
-}
-
-async function deleteCamera(name) {
-  if (!confirm('Eliminar cámara ' + name + '?')) return;
-  await api(`/api/cameras/${name}`, {method:'DELETE'});
-  refreshAll();
-}
+async function restartCamera(name) { await api(`/api/cameras/${name}/restart`, {method:'POST'}); refreshAll(); }
+async function deleteCamera(name) { if (!confirm('Eliminar cámara ' + name + '?')) return; await api(`/api/cameras/${name}`, {method:'DELETE'}); refreshAll(); }
 
 async function testTelegram() {
-  const el = document.getElementById('telegramMsg');
-  el.textContent = 'Probando...';
+  const el = $('telegramMsg'); el.textContent = 'Probando...';
+  try { const data = await api('/api/telegram/test', {method:'POST'}); el.textContent = data.message; }
+  catch(e) { el.textContent = 'Error: ' + e.message; }
+}
+
+async function testImageDetection() {
+  const msg = $('testMsg'); const result = $('testResult'); result.innerHTML = '';
+  const file = $('testImage').files[0];
+  if (!file) { msg.textContent = 'Selecciona una imagen primero.'; return; }
+  msg.textContent = 'Analizando imagen...';
+  const fd = new FormData();
+  fd.append('image', file); fd.append('conf', $('testConf').value); fd.append('imgsz', $('testImgsz').value); fd.append('all_classes', $('testAllClasses').checked ? 'true' : 'false');
   try {
-    const data = await api('/api/telegram/test', {method:'POST'});
-    el.textContent = data.message;
-  } catch (e) { el.textContent = 'Error: ' + e.message; }
+    const data = await api('/api/detection/test-image', {method:'POST', body: fd});
+    msg.textContent = `Detecciones: ${data.count}. Imagen anotada generada.`;
+    result.innerHTML = `<img class="preview" src="${data.image_url}?t=${Date.now()}"><div class="logs" style="margin-top:8px; max-height:180px">${JSON.stringify(data.detections, null, 2)}</div>`;
+  } catch(e) { msg.textContent = 'Error: ' + e.message; }
 }
 
 async function refreshAll() {
-  try { await refreshStatus(); } catch(e) { document.getElementById('summary').textContent = 'Error: ' + e.message; }
-  try { await refreshLogs(); } catch(e) { document.getElementById('logs').textContent = 'Error: ' + e.message; }
+  try { await refreshStatus(); } catch(e) { $('mYolo').textContent = 'ERROR'; $('logs').textContent = 'Error status: ' + e.message; }
+  try { await refreshLogs(); } catch(e) { $('logs').textContent = 'Error logs: ' + e.message; }
 }
-
 refreshAll();
 setInterval(refreshAll, 5000);
 </script>

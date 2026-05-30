@@ -26,6 +26,9 @@ class AppConfig:
     detect_fps: float
     cooldown_seconds: int
     draw_boxes: bool
+    box_persist_seconds: float
+    min_box_area_ratio: float
+    detector_device: str
     max_frame_width: int
     jpeg_quality: int
 
@@ -61,6 +64,9 @@ class AppConfig:
             "detect_fps": self.detect_fps,
             "cooldown_seconds": self.cooldown_seconds,
             "draw_boxes": self.draw_boxes,
+            "box_persist_seconds": self.box_persist_seconds,
+            "min_box_area_ratio": self.min_box_area_ratio,
+            "detector_device": self.detector_device,
             "max_frame_width": self.max_frame_width,
             "jpeg_quality": self.jpeg_quality,
             "save_dir": str(self.save_dir),
@@ -209,12 +215,17 @@ def load_app_config() -> AppConfig:
         cameras=cameras,
         model_path=os.getenv("MODEL_PATH", "models/yolo11n.pt"),
         target_classes=target_classes,
-        confidence_threshold=max(0.01, min(0.99, safe_float(os.getenv("CONFIDENCE_THRESHOLD", "0.45"), 0.45))),
-        infer_imgsz=max(256, safe_int(os.getenv("INFER_IMGSZ", "416"), 416)),
-        detect_fps=max(0.1, safe_float(os.getenv("DETECT_FPS", "1.0"), 1.0)),
+        # Default tuned for cats: lower confidence and larger image size. Cats are often small,
+        # partially visible, dark, or captured in IR/night mode.
+        confidence_threshold=max(0.01, min(0.99, safe_float(os.getenv("CONFIDENCE_THRESHOLD", "0.25"), 0.25))),
+        infer_imgsz=max(256, min(1536, safe_int(os.getenv("INFER_IMGSZ", "640"), 640))),
+        detect_fps=max(0.1, min(10.0, safe_float(os.getenv("DETECT_FPS", "1.0"), 1.0))),
         cooldown_seconds=max(0, safe_int(os.getenv("COOLDOWN_SECONDS", "60"), 60)),
         draw_boxes=env_bool("DRAW_BOXES", True),
-        max_frame_width=max(0, safe_int(os.getenv("MAX_FRAME_WIDTH", "960"), 960)),
+        box_persist_seconds=max(0.0, min(10.0, safe_float(os.getenv("BOX_PERSIST_SECONDS", "2.5"), 2.5))),
+        min_box_area_ratio=max(0.0, min(0.50, safe_float(os.getenv("MIN_BOX_AREA_RATIO", "0.0"), 0.0))),
+        detector_device=os.getenv("DETECTOR_DEVICE", "cpu").strip() or "cpu",
+        max_frame_width=max(0, safe_int(os.getenv("MAX_FRAME_WIDTH", "1280"), 1280)),
         jpeg_quality=max(40, min(95, safe_int(os.getenv("JPEG_QUALITY", "75"), 75))),
         save_dir=save_dir,
         events_jsonl=events_jsonl,

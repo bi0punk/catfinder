@@ -1,13 +1,13 @@
 [Unit]
-Description=CatFinder MVP RTSP cat detector
+Description=CatFinder PRO RTSP cat detector
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/catfinder_mvp
-EnvironmentFile=/opt/catfinder_mvp/.env
-ExecStart=/opt/catfinder_mvp/.venv/bin/python -m app.main
+WorkingDirectory=/opt/catfinder_pro
+EnvironmentFile=/opt/catfinder_pro/.env
+ExecStart=/opt/catfinder_pro/.venv/bin/python -m app.main
 Restart=always
 RestartSec=5
 User=catfinder
