@@ -1,7 +1,7 @@
 services:
   catfinder:
     build: .
-    container_name: catfinder_mvp
+    container_name: catfinder_pro
     restart: unless-stopped
     env_file:
       - .env

@@ -1,77 +1,64 @@
-# CatFinder MVP
+# CatFinder PRO
 
-Proyecto limpio para detectar gatos en cámaras RTSP, dibujar la detección, guardar evidencia y enviar foto por Telegram.
+Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ultralytics, dibujar bounding boxes visibles, guardar evidencias y enviar alertas por Telegram.
 
-Está diseñado en capas para poder crecer sin convertir el proyecto en un script monolítico:
+Esta versión corrige el punto crítico del MVP anterior: la detección venía demasiado estricta para cámaras reales. Ahora el perfil inicial está ajustado para gatos pequeños/parciales/nocturnos:
 
-```text
-RTSP Camera
-  ↓
-CameraWorker / CameraManager
-  ↓
-YoloDetector
-  ↓
-Draw + EvidenceStore
-  ↓
-TelegramNotifier
-  ↓
-Flask Web/API
+```env
+CONFIDENCE_THRESHOLD=0.25
+INFER_IMGSZ=640
+MAX_FRAME_WIDTH=1280
+BOX_PERSIST_SECONDS=2.5
+DRAW_BOXES=true
 ```
 
-## Qué hace
+## Por qué podía no detectar gatos
 
-1. Lee cámaras RTSP.
-2. Detecta gatos con YOLO/Ultralytics.
-3. Dibuja caja, etiqueta y fecha sobre el frame.
-4. Guarda evidencia en `captures/<camara>/`.
-5. Registra eventos en `captures/events.jsonl`.
-6. Envía la foto por Telegram si está habilitado.
-7. Permite gestionar cámaras desde API y panel web.
-8. Evita spam con `COOLDOWN_SECONDS`.
+1. `CONFIDENCE_THRESHOLD=0.45` era alto para gatos en cámaras RTSP. En la práctica un gato puede salir pequeño, oscuro, borroso, de perfil, parcial o con IR nocturno.
+2. `INFER_IMGSZ=416` reducía demasiado la imagen antes de inferir. Si el gato ocupa pocos píxeles, YOLO puede descartarlo.
+3. El stream RTSP puede estar usando substream de baja calidad, compresión fuerte o poca luz.
+4. El modelo incluido `yolo11n.pt` es liviano y rápido, pero menos preciso que `yolo11s.pt` o `yolo11m.pt`.
+5. La interfaz no mostraba ajustes ni diagnóstico visual simple; ahora puedes probar una imagen y ver el resultado anotado.
+6. El handler de logs de UI tenía un bug: intentaba usar `self.formatTime`, por lo que podía dejar el panel de logs vacío.
 
-## Estructura
+## Flujo
 
 ```text
-catfinder_mvp/
-├── app/
-│   ├── camera/          # workers RTSP y manager de cámaras
-│   ├── core/            # configuración, logging, utilidades
-│   ├── detection/       # YOLO + dibujo
-│   ├── domain/          # modelos de datos y estado
-│   ├── notifier/        # Telegram
-│   ├── storage/         # evidencias, events.jsonl, retención
-│   └── web/             # Flask, API y UI
-├── config/cameras.yaml
-├── captures/
-├── models/
-├── scripts/
-├── Dockerfile
-├── docker-compose.yml
-└── README.md
+RTSP
+  ↓
+CameraWorker
+  ↓
+YOLO detector cat-focused
+  ↓
+Bounding boxes + overlay
+  ↓
+Stream web + evidencia JPG + events.jsonl
+  ↓
+Telegram opcional
 ```
 
-## Instalación local en Linux
+## Instalación local Linux
 
 ```bash
-unzip catfinder_mvp_YYYYMMDD_HHMMSS.zip
-cd catfinder_mvp_YYYYMMDD_HHMMSS
+unzip catfinder_pro_YYYYMMDD_HHMM.zip
+cd catfinder_pro_YYYYMMDD_HHMM
 cp .env.example .env
-mkdir -p models captures
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+python -m app.main
 ```
 
-Descarga o copia el modelo:
+Panel:
 
-```bash
-# opción simple: Ultralytics puede descargarlo automáticamente si hay internet
-# o copia un yolo11n.pt ya descargado:
-cp /ruta/yolo11n.pt models/yolo11n.pt
+```text
+http://localhost:8080
 ```
 
-Configura la cámara en `config/cameras.yaml`:
+## Configurar cámara
+
+Edita `config/cameras.yaml`:
 
 ```yaml
 cameras:
@@ -83,63 +70,48 @@ cameras:
     max_frame_width: null
 ```
 
-Ejecuta:
+También puedes agregar cámaras desde el panel web.
 
-```bash
-python -m app.main
-```
+## Diagnóstico recomendado
 
-Panel:
+Primero usa el panel `Diagnóstico con imagen`:
 
-```text
-http://localhost:8080
-```
+1. Sube una imagen/frame donde aparezca el gato.
+2. Prueba con `conf=0.20` e `imgsz=640`.
+3. Si detecta en imagen pero no en vivo, el problema está en RTSP, resolución, iluminación o ángulo.
+4. Si no detecta en imagen, marca `Probar todas las clases`. Si aparece como `dog` u otra clase, el modelo liviano está confundiendo el objeto.
+5. Si sigue sin detectar, prueba `yolo11s.pt` o sube `INFER_IMGSZ=960`.
 
-## Configuración Telegram
+## Ajustes de producción CPU-only
 
-Edita `.env`:
-
-```env
-TELEGRAM_ENABLED=true
-TELEGRAM_BOT_TOKEN=123456:ABCDEF
-TELEGRAM_CHAT_ID=123456789
-```
-
-Prueba:
-
-```bash
-source .venv/bin/activate
-python scripts/test_telegram.py
-```
-
-También puedes probar desde el panel web con el botón `Probar Telegram`.
-
-## Configuración recomendada CPU-only
-
-Para una máquina sin GPU:
+Perfil equilibrado:
 
 ```env
-MODEL_PATH=models/yolo11n.pt
-TARGET_CLASSES=cat
-CONFIDENCE_THRESHOLD=0.45
-INFER_IMGSZ=416
+CONFIDENCE_THRESHOLD=0.25
+INFER_IMGSZ=640
 DETECT_FPS=1.0
-COOLDOWN_SECONDS=60
-MAX_FRAME_WIDTH=960
-JPEG_QUALITY=75
-OPENCV_THREADS=1
-OMP_NUM_THREADS=2
-MKL_NUM_THREADS=2
+MAX_FRAME_WIDTH=1280
 TORCH_NUM_THREADS=2
-TORCH_INTEROP_THREADS=1
+OPENCV_THREADS=1
 ```
 
-Si la CPU sube mucho:
+Más precisión, más CPU:
 
-1. Baja `INFER_IMGSZ` a `320`.
-2. Baja `DETECT_FPS` a `0.5`.
-3. Usa substream RTSP, por ejemplo Hikvision/Ezviz `Streaming/Channels/102`.
-4. Mantén `MAX_FRAME_WIDTH=960` o menor.
+```env
+CONFIDENCE_THRESHOLD=0.20
+INFER_IMGSZ=960
+DETECT_FPS=0.5
+MAX_FRAME_WIDTH=1600
+```
+
+Menos CPU, menor precisión:
+
+```env
+CONFIDENCE_THRESHOLD=0.30
+INFER_IMGSZ=512
+DETECT_FPS=0.5
+MAX_FRAME_WIDTH=960
+```
 
 ## API principal
 
@@ -149,6 +121,10 @@ GET  /ready
 GET  /api/status
 GET  /api/events
 GET  /api/logs
+GET  /api/detection
+PUT  /api/detection
+GET  /api/detection/classes
+POST /api/detection/test-image
 GET  /api/cameras
 POST /api/cameras
 PUT  /api/cameras/<name>
@@ -159,16 +135,30 @@ GET  /captures/<path>
 POST /api/telegram/test
 ```
 
-Agregar cámara por API:
+## Probar una imagen por API
 
 ```bash
-curl -s -X POST http://localhost:8080/api/cameras \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name":"patio",
-    "rtsp_url":"rtsp://usuario:password@192.168.1.100:554/Streaming/Channels/102",
-    "enabled":true
-  }' | jq
+curl -s -X POST http://localhost:8080/api/detection/test-image \
+  -F image=@/ruta/frame_gato.jpg \
+  -F conf=0.20 \
+  -F imgsz=640 \
+  -F all_classes=false | jq
+```
+
+## Telegram
+
+En `.env`:
+
+```env
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=123456:ABCDEF
+TELEGRAM_CHAT_ID=123456789
+```
+
+Luego prueba desde el panel o con:
+
+```bash
+python scripts/test_telegram.py
 ```
 
 ## Docker Compose
@@ -176,28 +166,17 @@ curl -s -X POST http://localhost:8080/api/cameras \
 ```bash
 cp .env.example .env
 mkdir -p models captures
-# cp /ruta/yolo11n.pt models/yolo11n.pt
-
 docker compose build
 docker compose up -d
-docker logs -f catfinder_mvp
+docker logs -f catfinder_pro
 ```
 
 ## Seguridad mínima
 
-Activa contraseña para el panel:
+Activa contraseña si lo expones por VPN o red compartida:
 
 ```env
 WEB_PASSWORD=clave_larga
 ```
 
-No expongas RTSP ni el panel directo a internet. Usa VPN/Tailscale o reverse proxy con HTTPS.
-
-## Próximas mejoras naturales
-
-1. ROI por cámara para alertar solo en zonas.
-2. Horarios de vigilancia.
-3. Detección de otros objetos: perros, personas, autos.
-4. Base SQLite para eventos.
-5. Grabación de clips cortos antes/después de la detección.
-6. Prometheus/Grafana para monitoreo.
+No publiques el panel ni RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS.
