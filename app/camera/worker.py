@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 
 from app.core.config import AppConfig
-from app.detection.draw import draw_detections, draw_overlay, encode_jpeg, resize_max_width
+from app.detection.draw import apply_split, draw_detections, draw_overlay, encode_jpeg, resize_max_width
 from app.detection.yolo_detector import YoloDetector
 from app.domain.models import AppState, CameraConfig, CameraRuntimeState, Detection
 from app.notifier.telegram import TelegramNotifier
@@ -82,13 +82,12 @@ class CameraWorker(threading.Thread):
                 message = str(exc)
                 logging.warning("Cámara %s desconectada/error: %s", self.camera.name, message)
                 self.runtime_state.mark_reconnect(message)
-                if cap is not None:
-                    cap.release()
                 self.stop_event.wait(delay)
                 delay = min(self.cfg.reconnect_delay_max_seconds, max(delay + 2, delay * 2))
             finally:
                 if cap is not None:
                     cap.release()
+                    cap = None
         self.runtime_state.mark_error("stopped", "")
         logging.info("Worker detenido: %s", self.camera.name)
 
@@ -98,6 +97,7 @@ class CameraWorker(threading.Thread):
             if not ok or frame is None:
                 raise RuntimeError("No se pudo leer frame RTSP")
 
+            frame = apply_split(frame, self.camera.split_mode)
             max_width = self.camera.max_frame_width or self.cfg.max_frame_width
             frame = resize_max_width(frame, max_width)
             now = time.time()

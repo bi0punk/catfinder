@@ -138,6 +138,7 @@ def load_cameras_file(cameras_file: Path) -> list[CameraConfig]:
                 detect_fps=safe_float(item.get("detect_fps"), 0.0) or None,
                 cooldown_seconds=safe_int(item.get("cooldown_seconds"), 0) or None,
                 max_frame_width=safe_int(item.get("max_frame_width"), 0) or None,
+                split_mode=str(item.get("split_mode", "none")).lower(),
             )
         )
     return cameras

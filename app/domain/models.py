@@ -17,6 +17,9 @@ class CameraConfig:
     detect_fps: Optional[float] = None
     cooldown_seconds: Optional[int] = None
     max_frame_width: Optional[int] = None
+    # split_mode: none | left | right | top | bottom
+    # Useful for dual-lens cameras that pack two views into one RTSP stream.
+    split_mode: str = "none"
 
     def public_dict(self) -> dict:
         data = asdict(self)
@@ -57,6 +60,7 @@ class EventRecord:
 @dataclass
 class CameraRuntimeState:
     name: str
+    split_mode: str = "none"
     status: str = "starting"
     last_frame_at: str = "-"
     last_error: str = ""
@@ -69,7 +73,7 @@ class CameraRuntimeState:
     _jpeg: Optional[bytes] = field(default=None, repr=False)
     _jpeg_id: int = field(default=0, repr=False)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
-    _frame_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    _frame_cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
 
     def put_frame(self, jpeg: bytes) -> None:
         with self._lock:
@@ -78,8 +82,8 @@ class CameraRuntimeState:
             self.frame_count += 1
             self.last_frame_at = local_now_str()
             self.status = "online"
-        self._frame_event.set()
-        self._frame_event.clear()
+        with self._frame_cond:
+            self._frame_cond.notify_all()
 
     def get_frame(self) -> tuple[Optional[bytes], int]:
         with self._lock:
@@ -89,7 +93,8 @@ class CameraRuntimeState:
         with self._lock:
             if self._jpeg_id > previous_id:
                 return True
-        return self._frame_event.wait(timeout)
+        with self._frame_cond:
+            return self._frame_cond.wait(timeout)
 
     def mark_error(self, status: str, message: str) -> None:
         with self._lock:
@@ -122,6 +127,7 @@ class CameraRuntimeState:
                 "detection_count": self.detection_count,
                 "frame_count": self.frame_count,
                 "reconnect_count": self.reconnect_count,
+                "split_mode": self.split_mode,
             }
 
 
@@ -132,9 +138,9 @@ class AppState:
         self.events: deque[EventRecord] = deque(maxlen=max_events)
         self.started_at = utc_now_iso()
 
-    def add_camera_state(self, name: str) -> CameraRuntimeState:
+    def add_camera_state(self, name: str, split_mode: str = "none") -> CameraRuntimeState:
         with self._lock:
-            state = CameraRuntimeState(name=name)
+            state = CameraRuntimeState(name=name, split_mode=split_mode)
             self.camera_states[name] = state
             return state
 
