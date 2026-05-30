@@ -37,7 +37,7 @@ class CameraManager:
             if camera.enabled:
                 self.start_camera(camera.name)
             else:
-                self.app_state.add_camera_state(camera.name).mark_error("disabled", "Cámara deshabilitada")
+                self.app_state.add_camera_state(camera.name, camera.split_mode).mark_error("disabled", "Cámara deshabilitada")
 
     def start_camera(self, name: str) -> None:
         with self._lock:
@@ -46,7 +46,8 @@ class CameraManager:
             camera = self._configs.get(name)
             if camera is None:
                 raise KeyError(f"Cámara no existe: {name}")
-            state = self.app_state.get_camera_state(name) or self.app_state.add_camera_state(name)
+            state = self.app_state.get_camera_state(name) or self.app_state.add_camera_state(name, camera.split_mode)
+            state.split_mode = camera.split_mode
             worker = CameraWorker(
                 cfg=self.cfg,
                 camera=camera,
@@ -90,7 +91,7 @@ class CameraManager:
         if camera.enabled:
             self.start_camera(camera.name)
         else:
-            self.app_state.add_camera_state(camera.name).mark_error("disabled", "Cámara deshabilitada")
+            self.app_state.add_camera_state(camera.name, camera.split_mode).mark_error("disabled", "Cámara deshabilitada")
         if persist:
             self.persist()
 
@@ -108,7 +109,8 @@ class CameraManager:
         if camera.enabled:
             self.start_camera(name)
         else:
-            state = self.app_state.get_camera_state(name) or self.app_state.add_camera_state(name)
+            state = self.app_state.get_camera_state(name) or self.app_state.add_camera_state(name, camera.split_mode)
+            state.split_mode = camera.split_mode
             state.mark_error("disabled", "Cámara deshabilitada")
         if persist:
             self.persist()

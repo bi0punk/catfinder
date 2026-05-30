@@ -1,7 +1,29 @@
 cameras:
-- name: patio24
+- name: fuera
+  rtsp_url: rtsp://admin:9H)p5x84@192.168.1.64:554/Streaming/Channels/101
+  enabled: true
+  detect_fps: null
+  cooldown_seconds: null
+  max_frame_width: null
+  split_mode: none
+- name: fuera2
+  rtsp_url: rtsp://admin:DXKPXV@192.168.1.12:554/ch1/main
+  enabled: true
+  detect_fps: null
+  cooldown_seconds: null
+  max_frame_width: null
+  split_mode: none
+- name: patio
   rtsp_url: rtsp://peww:ua3epk@192.168.1.21:554/live/ch00_0
   enabled: true
   detect_fps: null
   cooldown_seconds: null
   max_frame_width: null
+  split_mode: top
+- name: patio2
+  rtsp_url: rtsp://peww:ua3epk@192.168.1.21:554/live/ch00_0
+  enabled: true
+  detect_fps: null
+  cooldown_seconds: null
+  max_frame_width: null
+  split_mode: bottom

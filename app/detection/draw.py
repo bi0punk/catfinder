@@ -7,6 +7,31 @@ from app.core.utils import local_now_str
 from app.domain.models import Detection
 
 
+_VALID_SPLITS = {"none", "left", "right", "top", "bottom"}
+
+
+def apply_split(frame: np.ndarray, split_mode: str) -> np.ndarray:
+    """Crop a dual-lens frame to one half.
+
+    Dual-lens RTSP cameras pack two views side-by-side (left/right) or
+    stacked (top/bottom) into a single stream.  This crops to the
+    requested half so detection and streaming only see one lens.
+    """
+    mode = (split_mode or "none").lower()
+    if mode not in _VALID_SPLITS or mode == "none":
+        return frame
+    h, w = frame.shape[:2]
+    if mode == "left":
+        return frame[:, : w // 2]
+    if mode == "right":
+        return frame[:, w // 2 :]
+    if mode == "top":
+        return frame[: h // 2, :]
+    # bottom
+    return frame[h // 2 :, :]
+
+
+
 _LABEL_ES = {
     "cat": "GATO",
     "dog": "PERRO",
