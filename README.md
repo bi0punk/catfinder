@@ -2,6 +2,8 @@
 
 Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ultralytics, dibujar bounding boxes visibles, guardar evidencias y enviar alertas por Telegram.
 
+**Security:** Credenciales RTSP y Telegram se configuran en `.env` (excluido de git). No commitees credenciales reales.
+
 Esta versión corrige el punto crítico del MVP anterior: la detección venía demasiado estricta para cámaras reales. Ahora el perfil inicial está ajustado para gatos pequeños/parciales/nocturnos:
 
 ```env
@@ -14,12 +16,12 @@ DRAW_BOXES=true
 
 ## Por qué podía no detectar gatos
 
-1. `CONFIDENCE_THRESHOLD=0.45` era alto para gatos en cámaras RTSP. En la práctica un gato puede salir pequeño, oscuro, borroso, de perfil, parcial o con IR nocturno.
-2. `INFER_IMGSZ=416` reducía demasiado la imagen antes de inferir. Si el gato ocupa pocos píxeles, YOLO puede descartarlo.
-3. El stream RTSP puede estar usando substream de baja calidad, compresión fuerte o poca luz.
-4. El modelo incluido `yolo11n.pt` es liviano y rápido, pero menos preciso que `yolo11s.pt` o `yolo11m.pt`.
-5. La interfaz no mostraba ajustes ni diagnóstico visual simple; ahora puedes probar una imagen y ver el resultado anotado.
-6. El handler de logs de UI tenía un bug: intentaba usar `self.formatTime`, por lo que podía dejar el panel de logs vacío.
+1. `CONFIDENCE_THRESHOLD=0.45` era alto para gatos en cámaras RTSP.
+2. `INFER_IMGSZ=416` reducía demasiado la imagen antes de inferir.
+3. El stream RTSP puede estar usando substream de baja calidad.
+4. El modelo `yolo11n.pt` es liviano pero menos preciso que `yolo11s.pt`.
+5. Ahora puedes probar una imagen y ver el resultado anotado.
+6. Bug de logs de UI corregido.
 
 ## Flujo
 
@@ -50,15 +52,11 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
-Panel:
-
-```text
-http://localhost:8080
-```
+Panel: `http://localhost:8080`
 
 ## Configurar cámara
 
-Edita `config/cameras.yaml`:
+Edita `config/cameras.yaml` (este archivo está en `.gitignore` — no se sube al repo):
 
 ```yaml
 cameras:
@@ -79,7 +77,7 @@ Primero usa el panel `Diagnóstico con imagen`:
 1. Sube una imagen/frame donde aparezca el gato.
 2. Prueba con `conf=0.20` e `imgsz=640`.
 3. Si detecta en imagen pero no en vivo, el problema está en RTSP, resolución, iluminación o ángulo.
-4. Si no detecta en imagen, marca `Probar todas las clases`. Si aparece como `dog` u otra clase, el modelo liviano está confundiendo el objeto.
+4. Si no detecta en imagen, marca `Probar todas las clases`.
 5. Si sigue sin detectar, prueba `yolo11s.pt` o sube `INFER_IMGSZ=960`.
 
 ## Ajustes de producción CPU-only
@@ -93,24 +91,6 @@ DETECT_FPS=1.0
 MAX_FRAME_WIDTH=1280
 TORCH_NUM_THREADS=2
 OPENCV_THREADS=1
-```
-
-Más precisión, más CPU:
-
-```env
-CONFIDENCE_THRESHOLD=0.20
-INFER_IMGSZ=960
-DETECT_FPS=0.5
-MAX_FRAME_WIDTH=1600
-```
-
-Menos CPU, menor precisión:
-
-```env
-CONFIDENCE_THRESHOLD=0.30
-INFER_IMGSZ=512
-DETECT_FPS=0.5
-MAX_FRAME_WIDTH=960
 ```
 
 ## API principal
@@ -135,16 +115,6 @@ GET  /captures/<path>
 POST /api/telegram/test
 ```
 
-## Probar una imagen por API
-
-```bash
-curl -s -X POST http://localhost:8080/api/detection/test-image \
-  -F image=@/ruta/frame_gato.jpg \
-  -F conf=0.20 \
-  -F imgsz=640 \
-  -F all_classes=false | jq
-```
-
 ## Telegram
 
 En `.env`:
@@ -155,12 +125,6 @@ TELEGRAM_BOT_TOKEN=123456:ABCDEF
 TELEGRAM_CHAT_ID=123456789
 ```
 
-Luego prueba desde el panel o con:
-
-```bash
-python scripts/test_telegram.py
-```
-
 ## Docker Compose
 
 ```bash
@@ -168,15 +132,12 @@ cp .env.example .env
 mkdir -p models captures
 docker compose build
 docker compose up -d
-docker logs -f catfinder_pro
 ```
 
-## Seguridad mínima
+## Seguridad
 
-Activa contraseña si lo expones por VPN o red compartida:
-
-```env
-WEB_PASSWORD=clave_larga
-```
-
-No publiques el panel ni RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS.
+- El archivo `.env` contiene credenciales RTSP y Telegram — **nunca lo commitees**
+- `config/cameras.yaml` también está en `.gitignore`
+- Activa `WEB_PASSWORD` si expones el panel por VPN
+- No publiques RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS
+- Si clonaste el repo antes de la corrección, el token de Telegram pudo quedar expuesto — **revócalo en @BotFather**
