@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 
-from app.core.utils import coerce_bool, env_bool, ensure_dir, safe_float, safe_int, valid_camera_name
+from app.core.utils import coerce_bool, ensure_dir, env_bool, safe_float, safe_int, valid_camera_name
 from app.domain.models import CameraConfig
 
 
@@ -237,7 +236,7 @@ def load_app_config() -> AppConfig:
         telegram_chat_id=telegram_chat_id,
         request_timeout_seconds=max(2, safe_int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20"), 20)),
         telegram_queue_size=max(1, safe_int(os.getenv("TELEGRAM_QUEUE_SIZE", "50"), 50)),
-        web_host=os.getenv("WEB_HOST", "0.0.0.0").strip(),
+        web_host=os.getenv("WEB_HOST", "127.0.0.1").strip(),
         web_port=safe_int(os.getenv("WEB_PORT", "8080"), 8080),
         web_title=os.getenv("WEB_TITLE", "CatFinder MVP").strip(),
         web_password=os.getenv("WEB_PASSWORD", "").strip(),

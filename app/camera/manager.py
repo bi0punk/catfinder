@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 import threading
 
+from app.camera.worker import CameraWorker
 from app.core.config import AppConfig, save_cameras_file
 from app.core.utils import valid_camera_name
 from app.detection.yolo_detector import YoloDetector
 from app.domain.models import AppState, CameraConfig
 from app.notifier.telegram import TelegramNotifier
 from app.storage.evidence import EvidenceStore
-from app.camera.worker import CameraWorker
 
 
 class CameraManager:

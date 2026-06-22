@@ -11,7 +11,15 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 from app.camera.manager import CameraManager
 from app.core.config import AppConfig
 from app.core.logging_config import UILogHandler
-from app.core.utils import coerce_bool, ensure_dir, filename_timestamp, safe_float, safe_int, utc_now_iso, valid_camera_name
+from app.core.utils import (
+    coerce_bool,
+    ensure_dir,
+    filename_timestamp,
+    safe_float,
+    safe_int,
+    utc_now_iso,
+    valid_camera_name,
+)
 from app.detection.draw import draw_detections, draw_overlay
 from app.detection.yolo_detector import YoloDetector
 from app.domain.models import AppState, CameraConfig

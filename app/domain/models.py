@@ -3,8 +3,6 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Optional
 
 from app.core.utils import local_now_str, redact_url, utc_now_iso
 
@@ -14,9 +12,9 @@ class CameraConfig:
     name: str
     rtsp_url: str
     enabled: bool = True
-    detect_fps: Optional[float] = None
-    cooldown_seconds: Optional[int] = None
-    max_frame_width: Optional[int] = None
+    detect_fps: float | None = None
+    cooldown_seconds: int | None = None
+    max_frame_width: int | None = None
     # split_mode: none | left | right | top | bottom
     # Useful for dual-lens cameras that pack two views into one RTSP stream.
     split_mode: str = "none"
@@ -70,7 +68,7 @@ class CameraRuntimeState:
     detection_count: int = 0
     frame_count: int = 0
     reconnect_count: int = 0
-    _jpeg: Optional[bytes] = field(default=None, repr=False)
+    _jpeg: bytes | None = field(default=None, repr=False)
     _jpeg_id: int = field(default=0, repr=False)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     _frame_cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
@@ -85,7 +83,7 @@ class CameraRuntimeState:
         with self._frame_cond:
             self._frame_cond.notify_all()
 
-    def get_frame(self) -> tuple[Optional[bytes], int]:
+    def get_frame(self) -> tuple[bytes | None, int]:
         with self._lock:
             return self._jpeg, self._jpeg_id
 

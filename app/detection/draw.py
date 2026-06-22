@@ -6,7 +6,6 @@ import numpy as np
 from app.core.utils import local_now_str
 from app.domain.models import Detection
 
-
 _VALID_SPLITS = {"none", "left", "right", "top", "bottom"}
 
 

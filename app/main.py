@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 # Cargar .env y fijar límites antes de iniciar OpenCV/Torch pesado.
 load_dotenv()
 from app.core.utils import configure_numeric_runtime  # noqa: E402
+
 configure_numeric_runtime()
 
 from app.camera.manager import CameraManager  # noqa: E402

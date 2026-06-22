@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
-from pathlib import Path
 
 import cv2
 
@@ -50,20 +50,16 @@ class CameraWorker(threading.Thread):
 
     def _open_capture(self) -> cv2.VideoCapture:
         cap = cv2.VideoCapture(self.camera.rtsp_url, cv2.CAP_FFMPEG)
-        try:
+        with contextlib.suppress(Exception):
             cap.set(cv2.CAP_PROP_BUFFERSIZE, self.cfg.rtsp_buffer_size)
-        except Exception:
-            pass
         for prop_name, value in (
             ("CAP_PROP_OPEN_TIMEOUT_MSEC", self.cfg.rtsp_open_timeout_ms),
             ("CAP_PROP_READ_TIMEOUT_MSEC", self.cfg.rtsp_read_timeout_ms),
         ):
             prop = getattr(cv2, prop_name, None)
             if prop is not None:
-                try:
+                with contextlib.suppress(Exception):
                     cap.set(prop, value)
-                except Exception:
-                    pass
         return cap
 
     def run(self) -> None:

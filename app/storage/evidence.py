@@ -4,7 +4,6 @@ import json
 import logging
 import threading
 import time
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -45,9 +44,8 @@ class EvidenceStore:
 
     def append_event(self, event: EventRecord) -> None:
         line = json.dumps(event.to_dict(), ensure_ascii=False)
-        with self._lock:
-            with self.cfg.events_jsonl.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+        with self._lock, self.cfg.events_jsonl.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
 
     def cleanup_old_files(self) -> int:
         if self.cfg.retention_days <= 0:
