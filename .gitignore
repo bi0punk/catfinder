@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 config/
 /config
+config/cameras.yaml
 # C extensions
 *.so
 
