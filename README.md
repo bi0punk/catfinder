@@ -41,6 +41,21 @@ Telegram opcional
 
 ## Instalación local Linux
 
+### Opción A: clonar el repositorio
+
+```bash
+git clone https://github.com/bi0punk/catfinder.git
+cd catfinder
+cp .env.example .env
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python -m app.main
+```
+
+### Opción B: desde un release zip
+
 ```bash
 unzip catfinder_pro_YYYYMMDD_HHMM.zip
 cd catfinder_pro_YYYYMMDD_HHMM

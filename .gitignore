@@ -2,11 +2,16 @@
 __pycache__/
 *.py[codz]
 *$py.class
-config/
-/config
-config/cameras.yaml
+
 # C extensions
 *.so
+
+# Config local con credenciales de cámaras (no commitear)
+/config/
+config/cameras.yaml
+
+# Archivos zip de release/backup accidentales
+*.zip
 
 # Distribution / packaging
 .Python
