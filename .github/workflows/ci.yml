@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install ruff==0.6.9
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      # Instalación ligera: los tests cubren config/utils y no requieren
+      # ultralytics/opencv/torch (deps pesadas). Las funciones que las usan
+      # son imports perezosos dentro de app/core/utils.py.
+      - run: pip install pyyaml==6.0.2 python-dotenv==1.0.1 requests==2.32.3 flask==3.0.3 pytest==8.3.3
+      - run: PYTHONPATH=. pytest -q

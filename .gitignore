@@ -3,6 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Modelos YOLO pesados (se descargan aparte, ver README)
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.mlmodel
+!models/.gitkeep
+
 # C extensions
 *.so
 

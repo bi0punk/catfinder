@@ -1,27 +1,76 @@
 # CatFinder PRO
 
+[![CI](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml/badge.svg)](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ultralytics, dibujar bounding boxes visibles, guardar evidencias y enviar alertas por Telegram.
 
-**Security:** Credenciales RTSP y Telegram se configuran en `.env` (excluido de git). No commitees credenciales reales.
+## Tabla de contenidos
 
-Esta versión corrige el punto crítico del MVP anterior: la detección venía demasiado estricta para cámaras reales. Ahora el perfil inicial está ajustado para gatos pequeños/parciales/nocturnos:
+- [Características](#características)
+- [Stack](#stack)
+- [Arquitectura](#arquitectura)
+- [Requisitos](#requisitos)
+- [Instalación](#instalación)
+- [Uso](#uso)
+- [Tests](#tests)
+- [Configuración](#configuración)
+- [CI](#ci)
+- [Datos](#datos)
+- [Seguridad](#seguridad)
+- [Limitaciones y roadmap](#limitaciones-y-roadmap)
+- [Licencia](#licencia)
 
-```env
-CONFIDENCE_THRESHOLD=0.25
-INFER_IMGSZ=640
-MAX_FRAME_WIDTH=1280
-BOX_PERSIST_SECONDS=2.5
-DRAW_BOXES=true
+## Características
+
+- Visualización de cámaras RTSP con stream web en vivo.
+- Detección de gatos con YOLO (Ultralytics), bounding boxes visibles overlay.
+- Perfil ajustado para gatos pequeños/parciales/nocturnos (`CONFIDENCE_THRESHOLD=0.25`).
+- Guardado de evidencias JPG + `events.jsonl` con retención configurable.
+- Alertas por Telegram opcionales.
+- Panel de diagnóstico con imagen (sube un frame y prueba detección).
+- Configuración de cámaras vía `cameras.yaml` o panel web.
+- Docker Compose listo para CPU-only.
+
+## Stack
+
+- **Lenguaje**: Python 3.11+
+- **Web**: Flask + Jinja2 templates.
+- **Visión**: Ultralytics YOLO (`yolo11n.pt`), OpenCV (headless).
+- **Config**: PyYAML + python-dotenv.
+- **Notificaciones**: requests (Telegram Bot API).
+- **Calidad**: ruff (lint), pytest.
+- **Despliegue**: Docker (python:3.11-slim + ffmpeg) + systemd (`catfinder.service`).
+
+## Arquitectura
+
+```
+RTSP cameras
+   │
+   ▼
+CameraWorker (app/camera) ──► YOLO detector (app/detection, cat-focused)
+   │                              │
+   │                              ▼
+   │                         Bounding boxes + overlay (app/detection/draw.py)
+   │
+   ├──► Stream web (Flask, app/web) ──► Navegador :8080
+   ├──► Evidencias JPG + events.jsonl (app/storage)
+   └──► Telegram (app/notifier, opcional)
 ```
 
-## Por qué podía no detectar gatos
+- **CameraWorker**: lee frames RTSP, aplica ROI/splits, encola para inferencia.
+- **YOLO detector**: corre `yolo11n.pt` con `TARGET_CLASSES=cat`, persistencia de boxes configurable.
+- **Web**: panel Flask con stream MJPEG, API REST, diagnóstico por imagen.
+- **Storage**: capturas con retención por días, log de eventos JSONL.
 
-1. `CONFIDENCE_THRESHOLD=0.45` era alto para gatos en cámaras RTSP.
-2. `INFER_IMGSZ=416` reducía demasiado la imagen antes de inferir.
-3. El stream RTSP puede estar usando substream de baja calidad.
-4. El modelo `yolo11n.pt` es liviano pero menos preciso que `yolo11s.pt`.
-5. Ahora puedes probar una imagen y ver el resultado anotado.
-6. Bug de logs de UI corregido.
+## Requisitos
+
+- Linux nativo (o Docker)
+- Python 3.11+
+- `llama.cpp` no requerido; sí `ffmpeg` para RTSP (ya en la imagen Docker)
+- Cámara RTSP accesible (se recomienda substream para CPU-only)
+- Modelo `yolo11n.pt` (ver [Instalación](#instalación))
 
 ## Flujo
 
@@ -47,10 +96,16 @@ Telegram opcional
 git clone https://github.com/bi0punk/catfinder.git
 cd catfinder
 cp .env.example .env
+# Entorno (con uv, recomendado):
+uv venv -p 3.11 .venv && uv pip install -r requirements-dev.txt
+# o con pip:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+# Obtener el modelo YOLO (no se commitea, ~5MB):
+python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"  # descarga automática
+# o manualmente desde https://github.com/ultralytics/assets/releases
 python -m app.main
 ```
 
@@ -149,6 +204,36 @@ docker compose build
 docker compose up -d
 ```
 
+## Tests
+
+```bash
+# Tests ligeros (sin ultralytics/opencv/torch — imports perezosos):
+PYTHONPATH=. pytest -q
+```
+
+Cobertura:
+
+- `tests/test_config.py` — round-trip de `cameras.yaml`.
+- `tests/test_utils.py` — `coerce_bool`, `valid_camera_name`.
+- `tests/test_smoke.py` — higiene del repo (sin `.pt` commiteados, `.env.example` con perfil recomendado, `.gitignore` correcto).
+
+Los tests de integración con detección real requieren `ultralytics` + cámara; no corren en CI por peso.
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) sobre Python 3.11 / ubuntu-latest:
+
+- **lint** — `ruff check .`
+- **test** — instala deps livianas (pyyaml, dotenv, requests, flask, pytest) y corre `pytest -q` con `PYTHONPATH=.`. Las deps pesadas (ultralytics, opencv, torch) se omiten en CI gracias a imports perezosos.
+
+## Datos
+
+Directorios runtime (todos gitignored):
+
+- `captures/` — evidencias JPG + `events.jsonl` (retención por `RETENTION_DAYS`).
+- `models/` — modelo `yolo11n.pt` (descargable, no commiteado; se mantiene `models/.gitkeep`).
+- `config/cameras.yaml` — credenciales RTSP (no commiteado).
+
 ## Seguridad
 
 - El archivo `.env` contiene credenciales RTSP y Telegram — **nunca lo commitees**
@@ -156,3 +241,13 @@ docker compose up -d
 - Activa `WEB_PASSWORD` si expones el panel por VPN
 - No publiques RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS
 - Si clonaste el repo antes de la corrección, el token de Telegram pudo quedar expuesto — **revócalo en @BotFather**
+
+## Limitaciones y roadmap
+
+- **Limitación**: la detección depende de la calidad del substream RTSP y la iluminación; perfiles nocturnos pueden requerir `yolo11s.pt`.
+- **Limitación**: sin GPU, la inferencia es CPU-only (`yolo11n.pt` recomendado por latencia).
+- **Roadmap**: autodetección de substream, soporte multi-modelo, dashboard de eventos históricos.
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE).
