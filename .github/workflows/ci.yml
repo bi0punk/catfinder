@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-dev.txt
-      - run: pip install ruff==0.6.9
+      - run: pip install ruff
       - run: ruff check .
 
   test:

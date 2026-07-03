@@ -160,7 +160,7 @@ class YoloDetector:
 
         for box in boxes:
             try:
-                x1, y1, x2, y2 = [int(round(v)) for v in box.xyxy[0].tolist()]
+                x1, y1, x2, y2 = (int(round(v)) for v in box.xyxy[0].tolist())
                 x1 = max(0, min(w - 1, x1))
                 x2 = max(0, min(w - 1, x2))
                 y1 = max(0, min(h - 1, y1))
