@@ -88,10 +88,9 @@ class CameraRuntimeState:
             return self._jpeg, self._jpeg_id
 
     def wait_for_new_frame(self, previous_id: int, timeout: float = 1.0) -> bool:
-        with self._lock:
+        with self._frame_cond:
             if self._jpeg_id > previous_id:
                 return True
-        with self._frame_cond:
             return self._frame_cond.wait(timeout)
 
     def mark_error(self, status: str, message: str) -> None:

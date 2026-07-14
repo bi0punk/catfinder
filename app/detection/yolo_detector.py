@@ -127,7 +127,8 @@ class YoloDetector:
 
     def _predict(self, frame: np.ndarray, *, conf: float | None = None, imgsz: int | None = None, all_classes: bool = False):
         self.ensure_loaded()
-        assert self._model is not None
+        if self._model is None:
+            raise RuntimeError("YOLO model not loaded after ensure_loaded()")
         source = np.ascontiguousarray(frame)
         kwargs = {
             "source": source,
