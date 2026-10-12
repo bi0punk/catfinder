@@ -1,25 +1,25 @@
 # CatFinder PRO
 
+Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ultralytics, dibujar bounding boxes visibles, guardar evidencias y enviar alertas por Telegram.
+
 [![CI](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml/badge.svg)](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ultralytics, dibujar bounding boxes visibles, guardar evidencias y enviar alertas por Telegram.
-
-## Tabla de contenidos
+## Contenido
 
 - [Características](#características)
-- [Stack](#stack)
 - [Arquitectura](#arquitectura)
+- [Stack](#stack)
+- [Estructura del repositorio](#estructura-del-repositorio)
 - [Requisitos](#requisitos)
 - [Instalación](#instalación)
 - [Uso](#uso)
-- [Tests](#tests)
 - [Configuración](#configuración)
-- [CI](#ci)
+- [Tests / CI](#tests--ci)
 - [Datos](#datos)
 - [Seguridad](#seguridad)
-- [Limitaciones y roadmap](#limitaciones-y-roadmap)
+- [Roadmap](#roadmap)
 - [Licencia](#licencia)
 
 ## Características
@@ -33,6 +33,28 @@ Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ult
 - Configuración de cámaras vía `cameras.yaml` o panel web.
 - Docker Compose listo para CPU-only.
 
+## Arquitectura
+
+```mermaid
+flowchart TD
+  CAM[Camaras RTSP] --> WORK[CameraWorker app/camera/worker.py]
+  WORK --> ROI{Aplicar ROI / splits}
+  ROI --> QUEUE[Cola de inferencia INFERENCE_QUEUE_SIZE]
+  QUEUE --> YOLO[YOLO detector app/detection cat-focused]
+  YOLO --> DRAW[Bounding boxes + overlay app/detection/draw.py]
+  DRAW --> WEB[Flask stream web app/web puerto 8080]
+  DRAW --> EVID[Evidencias JPG + events.jsonl app/storage]
+  DRAW --> TG[Telegram app/notifier opcional]
+  CONF[config y env] --> WORK
+  CONF --> YOLO
+  CONF --> WEB
+```
+
+- **CameraWorker**: lee frames RTSP, aplica ROI/splits, encola para inferencia.
+- **YOLO detector**: corre `yolo11n.pt` con `TARGET_CLASSES=cat`, persistencia de boxes configurable.
+- **Web**: panel Flask con stream MJPEG, API REST, diagnóstico por imagen.
+- **Storage**: capturas con retención por días, log de eventos JSONL.
+
 ## Stack
 
 - **Lenguaje**: Python 3.11+
@@ -43,52 +65,42 @@ Sistema web en Python para visualizar cámaras RTSP, detectar gatos con YOLO/Ult
 - **Calidad**: ruff (lint), pytest.
 - **Despliegue**: Docker (python:3.11-slim + ffmpeg) + systemd (`catfinder.service`).
 
-## Arquitectura
+## Estructura del repositorio
 
 ```
-RTSP cameras
-   │
-   ▼
-CameraWorker (app/camera) ──► YOLO detector (app/detection, cat-focused)
-   │                              │
-   │                              ▼
-   │                         Bounding boxes + overlay (app/detection/draw.py)
-   │
-   ├──► Stream web (Flask, app/web) ──► Navegador :8080
-   ├──► Evidencias JPG + events.jsonl (app/storage)
-   └──► Telegram (app/notifier, opcional)
+catfinder/
+├── app/
+│   ├── main.py               # Entrada (app factory)
+│   ├── camera/               # Capture manager + worker (RTSP)
+│   ├── core/                 # Config, logging, utils
+│   ├── detection/            # YOLO detector + overlay
+│   ├── domain/               # Modelos de dominio
+│   ├── notifier/             # Telegram
+│   ├── storage/              # Evidencias + events.jsonl
+│   └── web/                  # Flask server + templates
+├── config/
+│   └── cameras.yaml          # Cámaras (gitignored)
+├── models/                   # yolo11n.pt (descargable, no commiteado)
+├── scripts/                  # deploy, run_local, test_image, test_telegram, validate
+├── tests/                    # config, smoke, utils
+├── .env.example
+├── Dockerfile
+├── docker-compose.yml
+├── catfinder.service         # Unidad systemd opcional
+├── pyproject.toml
+├── requirements.txt
+└── requirements-dev.txt
 ```
-
-- **CameraWorker**: lee frames RTSP, aplica ROI/splits, encola para inferencia.
-- **YOLO detector**: corre `yolo11n.pt` con `TARGET_CLASSES=cat`, persistencia de boxes configurable.
-- **Web**: panel Flask con stream MJPEG, API REST, diagnóstico por imagen.
-- **Storage**: capturas con retención por días, log de eventos JSONL.
 
 ## Requisitos
 
 - Linux nativo (o Docker)
 - Python 3.11+
-- `llama.cpp` no requerido; sí `ffmpeg` para RTSP (ya en la imagen Docker)
+- `ffmpeg` para RTSP (ya en la imagen Docker)
 - Cámara RTSP accesible (se recomienda substream para CPU-only)
 - Modelo `yolo11n.pt` (ver [Instalación](#instalación))
 
-## Flujo
-
-```text
-RTSP
-  ↓
-CameraWorker
-  ↓
-YOLO detector cat-focused
-  ↓
-Bounding boxes + overlay
-  ↓
-Stream web + evidencia JPG + events.jsonl
-  ↓
-Telegram opcional
-```
-
-## Instalación local Linux
+## Instalación
 
 ### Opción A: clonar el repositorio
 
@@ -105,7 +117,6 @@ pip install --upgrade pip
 pip install -r requirements-dev.txt
 # Obtener el modelo YOLO (no se commitea, ~5MB):
 python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"  # descarga automática
-# o manualmente desde https://github.com/ultralytics/assets/releases
 python -m app.main
 ```
 
@@ -124,7 +135,18 @@ python -m app.main
 
 Panel: `http://localhost:8080`
 
-## Configurar cámara
+### Docker Compose
+
+```bash
+cp .env.example .env
+mkdir -p models captures
+docker compose build
+docker compose up -d
+```
+
+## Uso
+
+### Configurar cámara
 
 Edita `config/cameras.yaml` (este archivo está en `.gitignore` — no se sube al repo):
 
@@ -140,7 +162,7 @@ cameras:
 
 También puedes agregar cámaras desde el panel web.
 
-## Diagnóstico recomendado
+### Diagnóstico recomendado
 
 Primero usa el panel `Diagnóstico con imagen`:
 
@@ -150,20 +172,7 @@ Primero usa el panel `Diagnóstico con imagen`:
 4. Si no detecta en imagen, marca `Probar todas las clases`.
 5. Si sigue sin detectar, prueba `yolo11s.pt` o sube `INFER_IMGSZ=960`.
 
-## Ajustes de producción CPU-only
-
-Perfil equilibrado:
-
-```env
-CONFIDENCE_THRESHOLD=0.25
-INFER_IMGSZ=640
-DETECT_FPS=1.0
-MAX_FRAME_WIDTH=1280
-TORCH_NUM_THREADS=2
-OPENCV_THREADS=1
-```
-
-## API principal
+### API principal
 
 ```text
 GET  /health
@@ -185,9 +194,41 @@ GET  /captures/<path>
 POST /api/telegram/test
 ```
 
-## Telegram
+## Configuración
 
-En `.env`:
+Variables de entorno (ver `.env.example`):
+
+| Variable | Descripción |
+|---|---|
+| `RTSP_URLS` | Cámaras: `nombre=url,nombre2=url2`. Usa substream cuando exista. |
+| `CAMERA_SPLITS` | Split por cámara: `none` \| `vertical` \| `horizontal`. |
+| `CAMERA_ROIS` | ROI opcional por vista: `viewid=x1:y1:x2:y2`. |
+| `MODEL_PATH` | Ruta del modelo YOLO (recomendado `models/yolo11n.pt`). |
+| `TARGET_CLASSES` | Clases a detectar (perfil por defecto: `cat`). |
+| `CONFIDENCE_THRESHOLD` | Umbral de confianza (por defecto `0.25`). |
+| `PROCESS_EVERY_N_FRAMES` | Frecuencia de inferencia; mayor valor = menos CPU/RAM. |
+| `COOLDOWN_SECONDS` | Segundos entre alertas por el mismo evento. |
+| `SAVE_DIR` | Directorio de evidencias (`captures`). |
+| `RETENTION_DAYS` | Retención de evidencias. |
+| `TELEGRAM_ENABLED` | Habilita alertas Telegram. |
+| `TELEGRAM_BOT_TOKEN` | Token del bot. |
+| `TELEGRAM_CHAT_ID` | Chat destino. |
+| `WEB_HOST` / `WEB_PORT` | Bind de la interfaz web (`0.0.0.0:8080`). |
+| `WEB_PASSWORD` | Password opcional del panel. |
+| `LOG_LEVEL` | Nivel de log. |
+
+Ajuste de producción CPU-only:
+
+```env
+CONFIDENCE_THRESHOLD=0.25
+INFER_IMGSZ=640
+DETECT_FPS=1.0
+MAX_FRAME_WIDTH=1280
+TORCH_NUM_THREADS=2
+OPENCV_THREADS=1
+```
+
+### Telegram
 
 ```env
 TELEGRAM_ENABLED=true
@@ -195,16 +236,7 @@ TELEGRAM_BOT_TOKEN=123456:ABCDEF
 TELEGRAM_CHAT_ID=123456789
 ```
 
-## Docker Compose
-
-```bash
-cp .env.example .env
-mkdir -p models captures
-docker compose build
-docker compose up -d
-```
-
-## Tests
+## Tests / CI
 
 ```bash
 # Tests ligeros (sin ultralytics/opencv/torch — imports perezosos):
@@ -218,8 +250,6 @@ Cobertura:
 - `tests/test_smoke.py` — higiene del repo (sin `.pt` commiteados, `.env.example` con perfil recomendado, `.gitignore` correcto).
 
 Los tests de integración con detección real requieren `ultralytics` + cámara; no corren en CI por peso.
-
-## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) sobre Python 3.11 / ubuntu-latest:
 
@@ -236,17 +266,19 @@ Directorios runtime (todos gitignored):
 
 ## Seguridad
 
-- El archivo `.env` contiene credenciales RTSP y Telegram — **nunca lo commitees**
-- `config/cameras.yaml` también está en `.gitignore`
-- Activa `WEB_PASSWORD` si expones el panel por VPN
-- No publiques RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS
-- Si clonaste el repo antes de la corrección, el token de Telegram pudo quedar expuesto — **revócalo en @BotFather**
+- El archivo `.env` contiene credenciales RTSP y Telegram — nunca lo commitees.
+- `config/cameras.yaml` también está en `.gitignore`.
+- Activa `WEB_PASSWORD` si expones el panel por VPN.
+- No publiques RTSP directo a internet. Usa Tailscale, WireGuard o reverse proxy con HTTPS.
+- Si clonaste el repo antes de la corrección, el token de Telegram pudo quedar expuesto — revócalo en @BotFather.
 
-## Limitaciones y roadmap
+## Roadmap
 
-- **Limitación**: la detección depende de la calidad del substream RTSP y la iluminación; perfiles nocturnos pueden requerir `yolo11s.pt`.
-- **Limitación**: sin GPU, la inferencia es CPU-only (`yolo11n.pt` recomendado por latencia).
-- **Roadmap**: autodetección de substream, soporte multi-modelo, dashboard de eventos históricos.
+- [x] Detección cat-focused con YOLO y overlay
+- [x] Web UI, evidencias y Telegram
+- [ ] Autodetección de substream
+- [ ] Soporte multi-modelo
+- [ ] Dashboard de eventos históricos
 
 ## Licencia
 
