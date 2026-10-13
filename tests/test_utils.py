@@ -36,6 +36,7 @@ def test_safe_int_and_float():
 def test_redact_url():
     assert redact_url("rtsp://admin:secret@10.0.0.1:554/live") == "rtsp://admin:***@10.0.0.1:554/live"
     assert redact_url("rtsp://10.0.0.1/live") == "rtsp://10.0.0.1/live"
+    assert redact_url("rtsp://u:p@host:notaport/live") == "rtsp://u:***@host/live"
 
 
 def test_time_helpers_and_filename():

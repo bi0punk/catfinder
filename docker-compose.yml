@@ -7,6 +7,9 @@ services:
       - .env
     environment:
       - TZ=America/Santiago
+      # Dentro del contenedor hay que escuchar en 0.0.0.0 para el mapeo de puertos.
+      # Define WEB_PASSWORD en .env para no exponer el panel sin auth.
+      - WEB_HOST=0.0.0.0
     ports:
       - "8080:8080"
     volumes:

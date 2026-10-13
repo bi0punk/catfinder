@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, dev]
+
+env:
+  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   lint:
@@ -17,6 +20,36 @@ jobs:
       - run: uv pip install ruff
       - run: ruff check .
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv pip install mypy
+      - run: mypy app
+
+  deadcode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv pip install vulture
+      - run: vulture app scripts
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv pip install bandit
+      - run: bandit -q -r app scripts
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,5 +57,6 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           python-version: "3.12"
-      - run: uv pip install pytest
-      - run: pytest -q
+      - run: uv pip install --no-deps -e .
+      - run: uv pip install flask python-dotenv PyYAML requests numpy opencv-python-headless pytest pytest-cov
+      - run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60

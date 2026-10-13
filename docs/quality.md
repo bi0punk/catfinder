@@ -91,3 +91,17 @@ Nuevos módulos de test (pytest, sin cargar YOLO ni abrir RTSP):
 | Tests | 8 (2 fallos) | **63 (0 fallos)** |
 | Cobertura `app` | **16%** | **67%** |
 | Líneas sin cubrir | 999 | 399 |
+
+## Hardening (commit 10)
+
+- `redact_url` deja de usar `try/except: pass` (bandit **B110**): el acceso a
+  `parsed.port` se protege puntualmente. bandit queda **sin hallazgos**.
+- `.env.example` se alinea con las variables realmente leídas (se eliminan
+  `CAMERA_SPLITS`, `CAMERA_ROIS`, `PROCESS_EVERY_N_FRAMES`, `INFERENCE_QUEUE_*`,
+  `MAX_EVENTS`, `CONFIG_FILE`, etc. que no consume el código) y usa defaults
+  seguros: `WEB_HOST=127.0.0.1` y `TELEGRAM_ENABLED=false`.
+- `docker-compose.yml` fija `WEB_HOST=0.0.0.0` en el contenedor (necesario para
+  el mapeo de puertos) recordando definir `WEB_PASSWORD`.
+- CI amplía a ramas `dev` y agrega jobs `typecheck` (mypy), `deadcode` (vulture),
+  `security` (bandit) y cobertura con umbral (`--cov-fail-under=60`).
+- `public_dict()` no expone `web_password` ni el bot token (cubierto por test).

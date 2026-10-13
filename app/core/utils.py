@@ -62,16 +62,18 @@ def filename_timestamp() -> str:
 
 
 def redact_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not (parsed.username or parsed.password):
+        return url
     try:
-        parsed = urlparse(url)
-        if parsed.username or parsed.password:
-            host = parsed.hostname or ""
-            port = f":{parsed.port}" if parsed.port else ""
-            user = parsed.username or "user"
-            return urlunparse(parsed._replace(netloc=f"{user}:***@{host}{port}"))
-    except Exception:
-        pass
-    return url
+        port = parsed.port
+    except ValueError:
+        # Puerto no numérico/fuera de rango: se omite en la versión redactada.
+        port = None
+    host = parsed.hostname or ""
+    user = parsed.username or "user"
+    netloc = f"{user}:***@{host}" + (f":{port}" if port else "")
+    return urlunparse(parsed._replace(netloc=netloc))
 
 
 _RESERVED_NAMES = {"api", "stream", "captures", "health", "ready", "metrics", "static", "logs"}
