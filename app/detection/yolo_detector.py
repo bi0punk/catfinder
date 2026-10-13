@@ -240,4 +240,4 @@ class YoloDetector:
         }
 
     def available_classes(self, limit: int = 120) -> list[dict]:
-        return [{"id": idx, "label": label} for idx, label in list(sorted(self._names.items()))[:limit]]
+        return [{"id": idx, "label": label} for idx, label in sorted(self._names.items())[:limit]]

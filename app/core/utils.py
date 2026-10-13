@@ -105,14 +105,14 @@ def configure_numeric_runtime() -> None:
     )
 
     try:
-        import cv2  # type: ignore
+        import cv2
 
         cv2.setNumThreads(safe_int(os.getenv("OPENCV_THREADS", "1"), 1))
     except Exception as exc:  # pragma: no cover - best effort
         logging.debug("No se pudo configurar OpenCV threads: %s", exc)
 
     try:
-        import torch  # type: ignore
+        import torch
 
         torch.set_num_threads(safe_int(os.getenv("TORCH_NUM_THREADS", "2"), 2))
         torch.set_num_interop_threads(safe_int(os.getenv("TORCH_INTEROP_THREADS", "1"), 1))

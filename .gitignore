@@ -9,6 +9,9 @@ env/
 venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 .vscode/
 .idea/
 .DS_Store
@@ -20,6 +23,7 @@ venv/
 *.jsonl
 *.h5
 *.pt
+models/*.pt
 *.gguf
 *.png
 *.jpg
@@ -29,3 +33,4 @@ data/
 outputs/
 snapshots/
 instance/
+config/cameras.yaml
