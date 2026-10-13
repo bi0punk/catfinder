@@ -72,3 +72,22 @@ bot token / password se hace vía env (`os.getenv`) y `public_dict()` no los exp
   centralizado en `app/detection/draw.py` (sin duplicar).
 - Capas: `camera`/`detection`/`storage`/`notifier` no importan `app.web`.
   Se agrega `tests/test_architecture.py` para bloquear regresiones.
+
+## Cobertura de tests (commit 8)
+
+Nuevos módulos de test (pytest, sin cargar YOLO ni abrir RTSP):
+
+- `tests/conftest.py` — fixtures `clean_env`/`cfg` (env aislado + `PROJECT_ROOT` temporal).
+- `tests/test_models.py` — `CameraConfig`, `Detection`, `EventRecord`, `CameraRuntimeState`, `AppState`.
+- `tests/test_storage.py` — `EvidenceStore` (guardado, append jsonl, retención) y `RetentionThread`.
+- `tests/test_notifier.py` — `TelegramNotifier` con `requests.post` mockeado (cola, envío, errores).
+- `tests/test_config_settings.py` — defaults, clamps, Telegram, RTSP_URLS, rutas y `public_dict` sin secretos.
+- `tests/test_draw.py` — split, resize, encode JPEG, dibujo/overlay.
+- `tests/test_detector.py` — `Detector`/`YoloDetector.status`, `update_runtime_params`; `UILogHandler`.
+- `tests/test_web.py` — Flask `TestClient`: health/ready, index, API, cámaras, auth básica, captures.
+
+| Métrica | Baseline | Final |
+| --- | --- | --- |
+| Tests | 8 (2 fallos) | **63 (0 fallos)** |
+| Cobertura `app` | **16%** | **67%** |
+| Líneas sin cubrir | 999 | 399 |

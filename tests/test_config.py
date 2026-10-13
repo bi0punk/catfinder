@@ -18,3 +18,26 @@ def test_public_dict_redacts_password():
     cam = CameraConfig(name="x", rtsp_url="rtsp://admin:secret@10.0.0.1/live")
     assert "secret" not in cam.public_dict()["rtsp_url"]
     assert "***" in cam.public_dict()["rtsp_url"]
+
+
+def test_load_cameras_file_missing_returns_empty(tmp_path: Path):
+    assert load_cameras_file(tmp_path / "nope.yaml") == []
+
+
+def test_load_cameras_file_skips_invalid_entries(tmp_path: Path):
+    path = tmp_path / "cameras.yaml"
+    path.write_text(
+        "cameras:\n"
+        "  - name: bad/name\n"
+        "    rtsp_url: rtsp://1.2.3.4/live\n"
+        "  - name: ok\n"
+        "    rtsp_url: http://not-rtsp\n"
+        "  - name: good\n"
+        "    rtsp_url: rtsp://1.2.3.4/live\n"
+        "    enabled: true\n"
+        "    split_mode: TOP\n",
+        encoding="utf-8",
+    )
+    loaded = load_cameras_file(path)
+    assert [c.name for c in loaded] == ["good"]
+    assert loaded[0].split_mode == "top"
