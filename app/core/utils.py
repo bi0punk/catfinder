@@ -92,12 +92,12 @@ def configure_numeric_runtime() -> None:
     This does not replace OS-level resource controls, but helps CPU-only boxes avoid
     runaway thread creation by OpenCV/PyTorch/BLAS.
     """
-    os.environ.setdefault("OMP_NUM_THREADS", os.getenv("OMP_NUM_THREADS", "2"))
-    os.environ.setdefault("MKL_NUM_THREADS", os.getenv("MKL_NUM_THREADS", "2"))
-    os.environ.setdefault("NUMEXPR_NUM_THREADS", os.getenv("NUMEXPR_NUM_THREADS", "2"))
+    os.environ.setdefault("OMP_NUM_THREADS", "2")
+    os.environ.setdefault("MKL_NUM_THREADS", "2")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
     os.environ.setdefault(
         "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-        os.getenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000|max_delay;500000"),
+        "rtsp_transport;tcp|stimeout;5000000|max_delay;500000",
     )
 
     try:

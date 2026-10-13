@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from itertools import islice
 from threading import RLock
 
 
@@ -27,8 +28,11 @@ class UILogHandler(logging.Handler):
             self.handleError(record)
 
     def records(self, limit: int = 100) -> list[dict]:
+        if limit <= 0:
+            return []
         with self._lock:
-            return list(self._records)[:limit]
+            # islice evita copiar todo el deque cuando solo se piden los últimos N.
+            return list(islice(self._records, limit))
 
 
 def setup_logging(level_name: str = "INFO") -> UILogHandler:

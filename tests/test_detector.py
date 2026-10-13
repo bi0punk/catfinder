@@ -58,6 +58,7 @@ def test_ui_log_handler_records():
         records = handler.records(10)
         assert any(record["message"] == "hola-mundo" for record in records)
         assert handler.records(1)[0]["level"] == "INFO"
+        assert handler.records(0) == []
     finally:
         logger.removeHandler(handler)
 

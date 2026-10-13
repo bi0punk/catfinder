@@ -159,6 +159,7 @@ class YoloDetector(Detector):
         h, w = frame.shape[:2]
         frame_area = max(1, h * w)
         min_area = float(getattr(self.cfg, "min_box_area_ratio", 0.0)) * frame_area
+        has_min_area = min_area > 0
 
         for box in boxes:
             try:
@@ -169,7 +170,7 @@ class YoloDetector(Detector):
                 y2 = max(0, min(h - 1, y2))
                 if x2 <= x1 or y2 <= y1:
                     continue
-                if min_area > 0 and ((x2 - x1) * (y2 - y1)) < min_area:
+                if has_min_area and ((x2 - x1) * (y2 - y1)) < min_area:
                     continue
                 cls_id = int(box.cls[0])
                 confidence = float(box.conf[0])
