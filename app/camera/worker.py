@@ -8,8 +8,8 @@ import time
 import cv2
 
 from app.core.config import AppConfig
+from app.detection.base import Detector
 from app.detection.draw import apply_split, draw_detections, draw_overlay, encode_jpeg, resize_max_width
-from app.detection.yolo_detector import YoloDetector
 from app.domain.models import AppState, CameraConfig, CameraRuntimeState, Detection
 from app.notifier.telegram import TelegramNotifier
 from app.storage.evidence import EvidenceStore
@@ -21,7 +21,7 @@ class CameraWorker(threading.Thread):
         cfg: AppConfig,
         camera: CameraConfig,
         runtime_state: CameraRuntimeState,
-        detector: YoloDetector,
+        detector: Detector,
         evidence_store: EvidenceStore,
         notifier: TelegramNotifier,
         app_state: AppState,

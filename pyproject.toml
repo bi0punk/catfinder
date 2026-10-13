@@ -78,6 +78,7 @@ exclude = ["scripts/"]
 [tool.vulture]
 min_confidence = 60
 # Rutas registradas via decoradores de Flask: vulture no las detecta como usadas.
-ignore_decorators = ["@app.route", "@require_auth"]
-# Campo real de EventRecord (dataclass): lo usa el constructor y la serialización.
-ignore_names = ["ts_utc"]
+ignore_decorators = ["@app.route", "@bp.route", "@require_auth"]
+# ts_utc: campo real de EventRecord (dataclass). runtime: sub-config de AppConfig
+# consumida via delegacion (cfg.log_level), invisible para vulture.
+ignore_names = ["ts_utc", "runtime"]

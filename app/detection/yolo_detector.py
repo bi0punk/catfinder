@@ -9,10 +9,11 @@ from typing import Any
 import numpy as np
 
 from app.core.config import AppConfig
+from app.detection.base import Detector
 from app.domain.models import Detection
 
 
-class YoloDetector:
+class YoloDetector(Detector):
     """Lazy-loaded YOLO detector focused on reliable cat detection.
 
     The inference lock intentionally serializes model execution. On CPU-only

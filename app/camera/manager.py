@@ -6,7 +6,7 @@ import threading
 from app.camera.worker import CameraWorker
 from app.core.config import AppConfig, save_cameras_file
 from app.core.utils import valid_camera_name
-from app.detection.yolo_detector import YoloDetector
+from app.detection.base import Detector
 from app.domain.models import AppState, CameraConfig
 from app.notifier.telegram import TelegramNotifier
 from app.storage.evidence import EvidenceStore
@@ -17,7 +17,7 @@ class CameraManager:
         self,
         cfg: AppConfig,
         app_state: AppState,
-        detector: YoloDetector,
+        detector: Detector,
         evidence_store: EvidenceStore,
         notifier: TelegramNotifier,
         stop_event: threading.Event,
