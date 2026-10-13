@@ -25,11 +25,6 @@ class TelegramNotifier:
     def start(self) -> None:
         self._thread.start()
 
-    def configure(self, enabled: bool, token: str, chat_id: str) -> None:
-        self.cfg.telegram_enabled = enabled
-        self.cfg.telegram_bot_token = token.strip()
-        self.cfg.telegram_chat_id = chat_id.strip()
-
     def enqueue_photo(self, event: EventRecord, image_path_abs: Path, caption: str) -> None:
         if not self.cfg.telegram_enabled:
             return

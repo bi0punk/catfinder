@@ -1,7 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catfinder"
+version = "0.1.0"
+description = "Monitor RTSP con detección de gatos (YOLO) y alertas por Telegram"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "flask==3.0.3",
+    "python-dotenv==1.0.1",
+    "PyYAML==6.0.2",
+    "requests==2.32.3",
+    "numpy>=1.24,<3",
+    "opencv-python-headless==4.10.0.84",
+    "ultralytics>=8.3.0,<9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.3",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "vulture",
+    "bandit",
+    "radon",
+]
+
+[tool.setuptools]
+packages = [
+    "app",
+    "app.camera",
+    "app.core",
+    "app.detection",
+    "app.domain",
+    "app.notifier",
+    "app.storage",
+    "app.web",
+]
+
+[tool.setuptools.package-data]
+"app.web" = ["templates/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 120

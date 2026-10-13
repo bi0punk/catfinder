@@ -112,12 +112,6 @@ def draw_overlay(frame: np.ndarray, camera_name: str, status_text: str = "") -> 
     return output
 
 
-def draw_no_detection(frame: np.ndarray, text: str = "sin deteccion") -> np.ndarray:
-    output = frame.copy()
-    cv2.putText(output, text, (12, output.shape[0] - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (180, 180, 180), 2, cv2.LINE_AA)
-    return output
-
-
 def resize_max_width(frame: np.ndarray, max_width: int) -> np.ndarray:
     if max_width <= 0 or frame.shape[1] <= max_width:
         return frame

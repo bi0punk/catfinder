@@ -68,7 +68,6 @@ rsync -avz --delete \
     --exclude 'catfinder.service' \
     --exclude 'README.md' \
     --exclude 'scripts/deploy.sh' \
-    --exclude 'requirements-dev.txt' \
     "$(dirname "$0")/.."/ "${SSH_DEST}:${REMOTE_DIR}/"
 
 # --- 5. Construir y levantar con Docker ---

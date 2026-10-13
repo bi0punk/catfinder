@@ -87,9 +87,8 @@ catfinder/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── catfinder.service         # Unidad systemd opcional
-├── pyproject.toml
-├── requirements.txt
-└── requirements-dev.txt
+├── pyproject.toml            # metadata + deps runtime y dev (extra "dev")
+└── docs/
 ```
 
 ## Requisitos
@@ -109,12 +108,12 @@ git clone https://github.com/bi0punk/catfinder.git
 cd catfinder
 cp .env.example .env
 # Entorno (con uv, recomendado):
-uv venv -p 3.11 .venv && uv pip install -r requirements-dev.txt
+uv venv -p 3.11 .venv && uv pip install -e ".[dev]"
 # o con pip:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 # Obtener el modelo YOLO (no se commitea, ~5MB):
 python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"  # descarga automática
 python -m app.main
@@ -129,7 +128,7 @@ cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install .
 python -m app.main
 ```
 

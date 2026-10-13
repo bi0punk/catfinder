@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
+COPY pyproject.toml README.md ./
 COPY app ./app
+RUN pip install --upgrade pip && pip install --no-cache-dir .
+
 COPY config ./config
 RUN mkdir -p /app/captures /app/models
 

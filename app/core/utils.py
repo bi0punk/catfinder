@@ -86,10 +86,6 @@ def valid_camera_name(name: str) -> bool:
     return bool(_CAMERA_RE.match(name))
 
 
-def clamp(value: float, min_value: float, max_value: float) -> float:
-    return max(min_value, min(max_value, value))
-
-
 def configure_numeric_runtime() -> None:
     """Limit CPU libraries before heavy work starts.
 

@@ -4,8 +4,7 @@ Bitácora del saneamiento/refactor sobre la rama `dev`.
 
 ## Baseline (commit 1)
 
-Entorno: `.venv` (Python 3.13), deps de `requirements.txt` + `requirements-dev.txt`
-(pytest, ruff) + herramientas de análisis (mypy, ruff, vulture, bandit, radon, pytest-cov).
+Entorno: `.venv` (Python 3.13), deps runtime + extra `dev` declaradas en `pyproject.toml`.
 
 ### Estado inicial
 
