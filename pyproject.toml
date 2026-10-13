@@ -19,3 +19,10 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 exclude = ["scripts/"]
+
+[tool.vulture]
+min_confidence = 60
+# Rutas registradas via decoradores de Flask: vulture no las detecta como usadas.
+ignore_decorators = ["@app.route", "@require_auth"]
+# Campo real de EventRecord (dataclass): lo usa el constructor y la serialización.
+ignore_names = ["ts_utc"]
