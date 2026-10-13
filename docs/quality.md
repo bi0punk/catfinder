@@ -32,8 +32,8 @@ Herramientas: `vulture 2.16`, `bandit 1.9.x`, `radon 6.x`.
 ### vulture (`vulture app scripts`, min_confidence=60)
 
 Falsos positivos neutralizados en `[tool.vulture]` de `pyproject.toml` con
-`ignore_decorators = ["@app.route", "@require_auth"]` (rutas Flask) y
-`ignore_names = ["ts_utc"]` (campo real de `EventRecord`).
+`ignore_decorators = ["@app.route", "@bp.route", "@require_auth"]` (rutas Flask) y
+`ignore_names = ["ts_utc", "runtime"]` (campos reales consumidos por el framework/delegación).
 
 Código muerto real detectado (eliminado en el commit de código muerto):
 
@@ -58,3 +58,17 @@ bot token / password se hace vía env (`os.getenv`) y `public_dict()` no los exp
 - Mantenibilidad más baja: `app/web/server.py` (**A 29.36**) -> justifica extraer blueprints.
 - `load_cameras_file` C (12) y `_parse_rtsp_urls` B (7) -> se conservan en el módulo de
   cámaras de config tras dividir.
+
+## Modularización y desacoplamiento (commits 4–7)
+
+- `app/core/config.py` (249 L) -> paquete `app/core/config/` por dominios
+  (`camera`, `detection`, `storage`, `notifier`, `web`, `runtime`) con
+  `AppConfig` agrupando sub-configs y API plana retrocompatible; carga única
+  `load_app_config()` / `load_settings()`.
+- `app/web/server.py` (259 L) -> `create_web_app` como wiring (~35 L) +
+  `app/web/context.py` (WebContext) + blueprints `public`, `ui`, `api`.
+- `app/detection/yolo_detector.py` -> interfaz `Detector.detect(frame)`
+  (`app/detection/base.py`) implementada por `YoloDetector`. El dibujo sigue
+  centralizado en `app/detection/draw.py` (sin duplicar).
+- Capas: `camera`/`detection`/`storage`/`notifier` no importan `app.web`.
+  Se agrega `tests/test_architecture.py` para bloquear regresiones.
