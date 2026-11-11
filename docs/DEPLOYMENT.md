@@ -3,6 +3,8 @@
 Tres formas soportadas: Docker Compose (recomendada), imagen publicada en GHCR y
 systemd en Linux nativo con entorno virtual.
 
+> Las imágenes publicadas usan **Python 3.15**. Para el entorno local se recomienda 3.12 (el CI prueba 3.11 y 3.12).
+
 ## 1. Docker Compose
 
 ```bash
