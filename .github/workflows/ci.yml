@@ -2,61 +2,53 @@ name: CI
 
 on:
   push:
-    branches: [main, master, dev]
+    branches: [main, dev]
   pull_request:
-    branches: [main, master, dev]
+    branches: [main, dev]
 
-env:
-  UV_SYSTEM_PYTHON: "1"
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-      - run: uv pip install ruff
-      - run: ruff check .
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.12"
-      - run: uv pip install mypy
-      - run: mypy app
-
-  deadcode:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.12"
-      - run: uv pip install vulture
-      - run: vulture app scripts
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.12"
-      - run: uv pip install bandit
-      - run: bandit -q -r app scripts
+          enable-cache: true
+      - name: Crear entorno virtual
+        run: uv venv --python 3.12
+      - name: Instalar proyecto y herramientas
+        run: |
+          uv pip install --no-deps -e .
+          uv pip install ruff mypy vulture bandit
+      - name: Ruff
+        run: ruff check .
+      - name: Mypy
+        run: mypy app
+      - name: Vulture
+        run: vulture app scripts
+      - name: Bandit
+        run: bandit -q -r app scripts
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-      - run: uv pip install --no-deps -e .
-      - run: uv pip install flask python-dotenv PyYAML requests numpy opencv-python-headless pytest pytest-cov
-      - run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
+          enable-cache: true
+      - name: Crear entorno virtual
+        run: uv venv --python 3.12
+      - name: Instalar proyecto sin dependencias pesadas
+        run: uv pip install --no-deps -e .
+      - name: Instalar dependencias de test
+        run: |
+          uv pip install \
+            flask==3.0.3 python-dotenv==1.0.1 PyYAML==6.0.2 requests==2.32.3 \
+            "numpy>=1.24,<3" opencv-python-headless==4.10.0.84 \
+            pytest==8.3.3 pytest-cov
+      - name: Pytest con cobertura
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
