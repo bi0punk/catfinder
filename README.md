@@ -8,7 +8,7 @@ o en cualquier servidor Linux sin GPU.
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fbi0punk%2Fcatfinder-2496ED?logo=docker)](https://github.com/bi0punk/catfinder/pkgs/container/catfinder)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-74%25-brightgreen.svg)](#calidad)
+[![Coverage](https://img.shields.io/badge/coverage-76%25-brightgreen.svg)](#calidad)
 
 ## Qué resuelve
 
@@ -161,7 +161,7 @@ bandit -q -r app scripts
 pytest --cov=app --cov-report=term-missing --cov-fail-under=60
 ```
 
-Cobertura actual: **74 %** (gate 60 % en CI). Los tests no descargan Ultralytics:
+Cobertura actual: **76 %** (gate 60 % en CI). Los tests no descargan Ultralytics:
 el detector se prueba con un doble inyectado, y el resto usa `tmp_path` y
 `monkeypatch` para aislar `.env`, cámara y red.
 
