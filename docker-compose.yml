@@ -1,8 +1,12 @@
 services:
   catfinder:
     build: .
+    image: ghcr.io/bi0punk/catfinder:latest
     container_name: catfinder_pro
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - .env
     environment:
@@ -17,3 +21,13 @@ services:
       - ./captures:/app/captures
       - ./models:/app/models:ro
     shm_size: "512mb"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
