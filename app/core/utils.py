@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+logger = logging.getLogger(__name__)
+
 
 def safe_int(value: Any, default: int) -> int:
     try:
@@ -107,7 +109,7 @@ def configure_numeric_runtime() -> None:
 
         cv2.setNumThreads(safe_int(os.getenv("OPENCV_THREADS", "1"), 1))
     except Exception as exc:  # pragma: no cover - best effort
-        logging.debug("No se pudo configurar OpenCV threads: %s", exc)
+        logger.debug("No se pudo configurar OpenCV threads: %s", exc)
 
     try:
         import torch
@@ -115,4 +117,4 @@ def configure_numeric_runtime() -> None:
         torch.set_num_threads(safe_int(os.getenv("TORCH_NUM_THREADS", "2"), 2))
         torch.set_num_interop_threads(safe_int(os.getenv("TORCH_INTEROP_THREADS", "1"), 1))
     except Exception as exc:  # pragma: no cover - best effort
-        logging.debug("No se pudo configurar Torch threads: %s", exc)
+        logger.debug("No se pudo configurar Torch threads: %s", exc)

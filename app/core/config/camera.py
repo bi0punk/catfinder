@@ -10,6 +10,8 @@ import yaml
 from app.core.utils import coerce_bool, ensure_dir, safe_float, safe_int, valid_camera_name
 from app.domain.models import CameraConfig
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class CameraSettings:
@@ -28,16 +30,16 @@ def _parse_rtsp_urls(raw: str) -> list[CameraConfig]:
         if not item:
             continue
         if "=" not in item:
-            logging.warning("RTSP_URLS inválido, falta nombre=url: %s", item)
+            logger.warning("RTSP_URLS inválido, falta nombre=url: %s", item)
             continue
         name, url = item.split("=", 1)
         name = name.strip()
         url = url.strip()
         if not valid_camera_name(name):
-            logging.warning("Nombre de cámara inválido en RTSP_URLS: %s", name)
+            logger.warning("Nombre de cámara inválido en RTSP_URLS: %s", name)
             continue
         if not url.startswith("rtsp://"):
-            logging.warning("URL RTSP inválida para cámara %s", name)
+            logger.warning("URL RTSP inválida para cámara %s", name)
             continue
         cameras.append(CameraConfig(name=name, rtsp_url=url, enabled=True))
     return cameras
@@ -49,7 +51,7 @@ def load_cameras_file(cameras_file: Path) -> list[CameraConfig]:
     try:
         data = yaml.safe_load(cameras_file.read_text(encoding="utf-8")) or {}
     except Exception as exc:
-        logging.warning("No se pudo leer %s: %s", cameras_file, exc)
+        logger.warning("No se pudo leer %s: %s", cameras_file, exc)
         return []
 
     raw_cameras = data.get("cameras", []) if isinstance(data, dict) else []
@@ -60,10 +62,10 @@ def load_cameras_file(cameras_file: Path) -> list[CameraConfig]:
         name = str(item.get("name", "")).strip()
         url = str(item.get("rtsp_url", "")).strip()
         if not valid_camera_name(name):
-            logging.warning("Cámara ignorada por nombre inválido: %s", name)
+            logger.warning("Cámara ignorada por nombre inválido: %s", name)
             continue
         if not url.startswith("rtsp://"):
-            logging.warning("Cámara %s ignorada porque rtsp_url no empieza con rtsp://", name)
+            logger.warning("Cámara %s ignorada porque rtsp_url no empieza con rtsp://", name)
             continue
         cameras.append(
             CameraConfig(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import logging
 import signal
 import threading
@@ -22,12 +23,33 @@ from app.storage.evidence import EvidenceStore, RetentionThread  # noqa: E402
 from app.web.server import create_web_app  # noqa: E402
 
 
-def main() -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="catfinder",
+        description="Monitor RTSP con detección de gatos (YOLO) y alertas por Telegram",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="valida la configuración y sale sin abrir cámaras ni el panel web",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
     cfg = load_app_config()
     ui_logs = setup_logging(cfg.log_level)
     logging.info("CatFinder MVP iniciando")
     logging.info("Cámaras configuradas: %d", len(cfg.cameras))
     logging.info("Evidencias: %s", cfg.save_dir)
+
+    if args.check:
+        print(
+            f"OK: {len(cfg.cameras)} cámara(s) · modelo={cfg.model_path} · "
+            f"web={cfg.web_host}:{cfg.web_port} · evidencias={cfg.save_dir}"
+        )
+        return 0
 
     stop_event = threading.Event()
 
@@ -73,7 +95,8 @@ def main() -> None:
         stop_event.set()
         camera_manager.stop_all()
         logging.info("CatFinder detenido")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,0 +1,55 @@
+name: Reporte de bug
+description: Algo no funciona como se documenta
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir el issue ejecuta `python -m app --check` y revisa
+        `docs/TROUBLESHOOTING.md`.
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué ocurre
+      description: Describe el comportamiento y el esperado.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducir
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión / commit
+      placeholder: "v1.0.0 o salida de git rev-parse --short HEAD"
+    validations:
+      required: true
+  - type: dropdown
+    id: despliegue
+    attributes:
+      label: Forma de despliegue
+      options:
+        - Docker Compose
+        - Imagen GHCR
+        - systemd / venv
+        - Ejecución local
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs y `/ready`
+      description: Pega `docker compose logs --tail=200` y `curl -s localhost:8080/ready`.
+      render: shell
+  - type: textarea
+    id: entorno
+    attributes:
+      label: Entorno
+      placeholder: "SO, Python, CPU/GPU, 1 o varias cámaras, modelo usado"
