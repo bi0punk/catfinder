@@ -25,13 +25,13 @@ jobs:
           uv pip install --no-deps -e .
           uv pip install ruff mypy vulture bandit
       - name: Ruff
-        run: ruff check .
+        run: .venv/bin/ruff check .
       - name: Mypy
-        run: mypy app
+        run: .venv/bin/mypy app
       - name: Vulture
-        run: vulture app scripts
+        run: .venv/bin/vulture app scripts
       - name: Bandit
-        run: bandit -q -r app scripts
+        run: .venv/bin/bandit -q -r app scripts
 
   test:
     runs-on: ubuntu-latest
@@ -56,7 +56,7 @@ jobs:
             "numpy>=1.24,<3" opencv-python-headless==4.10.0.84 \
             pytest==9.0.3 pytest-cov
       - name: Pytest con cobertura
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
+        run: .venv/bin/pytest --cov=app --cov-report=term-missing --cov-fail-under=60
 
   audit:
     runs-on: ubuntu-latest
