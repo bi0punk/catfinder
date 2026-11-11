@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- etapa de build ----------
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -12,7 +12,7 @@ COPY app ./app
 RUN pip install --upgrade pip && pip install --prefix=/install .
 
 # ---------- etapa de ejecución ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
