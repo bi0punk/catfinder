@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -40,9 +41,10 @@ class YoloDetector(Detector):
         "people": "person",
     }
 
-    def __init__(self, cfg: AppConfig):
+    def __init__(self, cfg: AppConfig, model_factory: Callable[[str], Any] | None = None):
         self.cfg = cfg
         self._model: Any = None
+        self._model_factory = model_factory
         self._names: dict[int, str] = {}
         self._target_ids: list[int] = []
         self._target_labels: list[str] = []
@@ -75,11 +77,15 @@ class YoloDetector(Detector):
         return labels or ["cat"]
 
     def _load_locked(self) -> None:
-        from ultralytics import YOLO  # lazy import: avoids heavy startup until needed
-
         model_path = self._resolve_model_path()
         self._resolved_model_path = model_path
-        self._model = YOLO(model_path)
+        if self._model_factory is not None:
+            model = self._model_factory(model_path)
+        else:
+            from ultralytics import YOLO  # lazy import: avoids heavy startup until needed
+
+            model = YOLO(model_path)
+        self._model = model
         names_raw = getattr(self._model, "names", {})
         if isinstance(names_raw, dict):
             self._names = {int(k): str(v).lower() for k, v in names_raw.items()}
