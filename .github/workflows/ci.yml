@@ -35,13 +35,18 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    name: test (py${{ matrix.python-version }})
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Crear entorno virtual
-        run: uv venv --python 3.12
+        run: uv venv --python ${{ matrix.python-version }}
       - name: Instalar proyecto sin dependencias pesadas
         run: uv pip install --no-deps -e .
       - name: Instalar dependencias de test
@@ -52,3 +57,22 @@ jobs:
             pytest==8.3.3 pytest-cov
       - name: Pytest con cobertura
         run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Crear entorno virtual
+        run: uv venv --python 3.12
+      - name: Instalar dependencias de ejecución
+        run: |
+          uv pip install --no-deps -e .
+          uv pip install \
+            flask==3.0.3 python-dotenv==1.0.1 PyYAML==6.0.2 requests==2.32.3 \
+            "numpy>=1.24,<3" opencv-python-headless==4.10.0.84
+          uv pip install pip-audit
+      - name: Auditar dependencias
+        run: .venv/bin/pip-audit --skip-editable
