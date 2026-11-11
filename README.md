@@ -122,7 +122,6 @@ Perfil CPU-only (el que usa el proyecto en producción):
 ```env
 TORCH_NUM_THREADS=2
 OPENCV_THREADS=1
-PROCESS_EVERY_N_FRAMES=2
 ```
 
 ## Uso
