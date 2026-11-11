@@ -4,7 +4,6 @@ Monitor de cámaras RTSP con detección de gatos en tiempo real (YOLO), panel we
 evidencias y alertas por Telegram. Pensado para correr en CPU, en una Raspberry Pi
 o en cualquier servidor Linux sin GPU.
 
-[![CI](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml/badge.svg)](https://github.com/bi0punk/catfinder/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fbi0punk%2Fcatfinder-2496ED?logo=docker)](https://github.com/bi0punk/catfinder/pkgs/container/catfinder)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -161,23 +160,15 @@ bandit -q -r app scripts
 pytest --cov=app --cov-report=term-missing --cov-fail-under=60
 ```
 
-Cobertura actual: **76 %** (gate 60 % en CI). Los tests no descargan Ultralytics:
+Cobertura actual: **76 %** (gate 60 %). Los tests no descargan Ultralytics:
 el detector se prueba con un doble inyectado, y el resto usa `tmp_path` y
 `monkeypatch` para aislar `.env`, cámara y red.
 
 ## CI/CD
 
-`.github/workflows/ci.yml`:
-
-| Job | Qué hace |
-|---|---|
-| `quality` | `ruff`, `mypy`, `vulture`, `bandit` |
-| `test (py3.11 / py3.12)` | pytest + cobertura (gate 60 %) |
-| `audit` | `pip-audit` sobre las dependencias de ejecución |
-| `docker` | build en PR; publica en GHCR en `main` y tags |
-
-El workflow crea un `venv` por job (los runners están marcados como
-*externally-managed*, PEP 668) y cachea las descargas de `uv`.
+GitHub solo aloja el código. La integración continua y el despliegue se
+ejecutan en GitLab/entorno local; los workflows de `.github/` están
+deshabilitados en GitHub. La validación es la de la sección anterior.
 
 ## Despliegue
 
