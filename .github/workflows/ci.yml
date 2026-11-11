@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, dev]
+    tags: ["v*"]
   pull_request:
     branches: [main, dev]
 
@@ -101,6 +102,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
       - name: Construir y publicar
         uses: docker/build-push-action@v6
