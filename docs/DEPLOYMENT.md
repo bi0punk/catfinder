@@ -44,8 +44,9 @@ Volúmenes:
 
 ## 2. Imagen publicada (GHCR)
 
-Cada push a `main` publica `ghcr.io/bi0punk/catfinder:latest` y `:main`; los tags
-semánticos generan `:X.Y.Z`.
+La imagen `ghcr.io/bi0punk/catfinder:latest` corresponde a la **versión 1.0.0**
+(histórico). GitHub solo aloja el código; el despliegue actual se construye en
+el GitLab interno o con `docker compose build`.
 
 ```bash
 docker pull ghcr.io/bi0punk/catfinder:latest
