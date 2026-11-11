@@ -43,6 +43,8 @@ Primera versión pensada para uso y despliegue reales.
 
 - Contenedor sin root y con `no-new-privileges`.
 - Auditoría de dependencias en CI.
+- Actualización de dependencias con CVE: Flask 3.1.3, python-dotenv 1.2.2,
+  requests 2.33.0 y pytest 9.0.3.
 - `SECURITY.md` con alcance y rotación de secretos.
 
 ## [0.1.0] - 2026-10-12
