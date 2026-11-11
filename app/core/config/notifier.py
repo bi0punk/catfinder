@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from app.core.utils import env_bool, safe_int
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class NotifierSettings:
@@ -23,7 +25,7 @@ def load_notifier_settings() -> NotifierSettings:
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if telegram_enabled and not (telegram_bot_token and telegram_chat_id):
-        logging.warning("TELEGRAM_ENABLED=true pero faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID. Telegram queda desactivado.")
+        logger.warning("TELEGRAM_ENABLED=true pero faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID. Telegram queda desactivado.")
         telegram_enabled = False
 
     return NotifierSettings(
